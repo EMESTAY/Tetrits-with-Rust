@@ -1,3 +1,4 @@
+mod background;
 mod bidule;
 mod constants;
 mod draw;

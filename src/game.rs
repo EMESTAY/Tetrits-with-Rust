@@ -1,3 +1,4 @@
+use crate::background::NatureBackground;
 use crate::bidule::{Bidule, BiduleType};
 use crate::constants::*;
 use crate::effects::{ComicEffect, Particle};
@@ -19,6 +20,7 @@ pub struct Game {
     // Visuals
     pub effects: Vec<ComicEffect>,
     pub particles: Vec<Particle>,
+    pub background: NatureBackground,
     pub font: Option<Font>,
     pub audio: AudioSystem,
     pub is_music_playing: bool,
@@ -39,6 +41,7 @@ impl Game {
             fall_speed: 0.5,
             effects: Vec::new(),
             particles: Vec::new(),
+            background: NatureBackground::new(),
             font,
             audio,
             bag: Vec::new(),
@@ -104,6 +107,8 @@ impl Game {
 
         self.effects.retain_mut(|e| e.update());
         self.particles.retain_mut(|p| p.update());
+
+        self.background.update();
     }
 
     fn handle_input(&mut self) {

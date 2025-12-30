@@ -1,5 +1,6 @@
 use crate::bidule::Bidule;
 use crate::constants::*;
+
 use macroquad::prelude::*;
 
 /// Draws a piece centered within a given rectangle
@@ -411,65 +412,6 @@ pub fn draw_jelly_block(
     }
 }
 
-pub fn draw_sky_gradient() {
-    let top = COLOR_SKY_TOP;
-    let bot = COLOR_SKY_BOTTOM;
-
-    // Draw vertical stripes to simulate gradient if texture not available
-    let steps = 20;
-    let h = screen_height() / steps as f32;
-    for i in 0..steps {
-        let t = i as f32 / steps as f32;
-        let color = Color::new(
-            top.r + (bot.r - top.r) * t,
-            top.g + (bot.g - top.g) * t,
-            top.b + (bot.b - top.b) * t,
-            1.0,
-        );
-        draw_rectangle(0.0, i as f32 * h, screen_width(), h + 1.0, color);
-    }
-}
-
-pub fn draw_clouds() {
-    // Static clouds for now, can animate offset later
-    let time = get_time();
-    let cloud_color = Color::new(1.0, 1.0, 1.0, 0.6);
-
-    // Helper to draw cloud clump
-    let draw_cloud = |cx: f32, cy: f32, scale: f32| {
-        draw_circle(cx, cy, 30.0 * scale, cloud_color);
-        draw_circle(
-            cx - 25.0 * scale,
-            cy + 10.0 * scale,
-            20.0 * scale,
-            cloud_color,
-        );
-        draw_circle(
-            cx + 25.0 * scale,
-            cy + 5.0 * scale,
-            22.0 * scale,
-            cloud_color,
-        );
-    };
-
-    // Draw a few clouds
-    draw_cloud(
-        100.0 + (time * 10.0) as f32 % (screen_width() + 200.0) - 100.0,
-        100.0,
-        1.5,
-    );
-    draw_cloud(
-        400.0 + (time * 15.0) as f32 % (screen_width() + 200.0) - 100.0,
-        300.0,
-        1.0,
-    );
-    draw_cloud(
-        800.0 + (time * 8.0) as f32 % (screen_width() + 200.0) - 100.0,
-        150.0,
-        1.2,
-    );
-}
-
 /// Draws a "Jelly Frame" UI Panel
 pub fn draw_panel(
     x: f32,
@@ -575,57 +517,6 @@ pub fn draw_panel(
     }
 }
 
-/// Draws text with a "Jelly" wobble effect (updated for Font support)
-pub fn draw_text_special(
-    text: &str,
-    x: f32,
-    y: f32,
-    font_size: f32,
-    color: Color,
-    font: Option<&Font>,
-) {
-    let time = get_time();
-    let chars: Vec<char> = text.chars().collect();
-    let mut current_x = x;
-
-    // Basic approximate width if font is not loaded, but with font we can measure?
-    // Macroquad's measure_text is global.
-
-    for (i, c) in chars.iter().enumerate() {
-        let phase = i as f64 * 0.5;
-        let offset_y = ((time * 4.0 + phase).sin() * 3.0) as f32;
-        let scale_pulse = 1.0 + ((time * 3.0 + phase).cos() * 0.1) as f32;
-
-        let s = c.to_string();
-        let cur_size = (font_size * scale_pulse) as u16;
-
-        if let Some(f) = font {
-            let params = TextParams {
-                font: Some(f),
-                font_size: cur_size,
-                color: Color::new(0.0, 0.0, 0.0, 0.5),
-                ..Default::default()
-            };
-            draw_text_ex(&s, current_x + 2.0, y + offset_y + 2.0, params);
-
-            let params_main = TextParams {
-                font: Some(f),
-                font_size: cur_size,
-                color: color,
-                ..Default::default()
-            };
-            draw_text_ex(&s, current_x, y + offset_y, params_main);
-
-            // measure advance
-            let dim = measure_text(&s, Some(f), cur_size, 1.0);
-            current_x += dim.width;
-        } else {
-            draw_text(&s, current_x, y + offset_y, font_size * scale_pulse, color);
-            current_x += font_size * 0.6;
-        }
-    }
-}
-
 use crate::game::Game;
 
 /// Helper for basic styled text
@@ -636,9 +527,8 @@ pub fn draw_text_styled(text: &str, x: f32, y: f32, size: f32, color: Color) {
 
 /// Main drawing function for the game
 pub fn draw_game(game: &Game) {
-    // 1. Background (Sky + Clouds)
-    draw_sky_gradient();
-    draw_clouds();
+    // 1. Background (Nature Theme)
+    game.background.draw();
 
     // Layout Constants
     let board_w = GRID_WIDTH as f32 * BLOCK_SIZE;

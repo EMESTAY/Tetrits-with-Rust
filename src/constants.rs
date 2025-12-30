@@ -11,15 +11,11 @@ pub const fn hex_color(r: u8, g: u8, b: u8) -> Color {
 
 // Vivid "Jelly" Palette
 // Sky: 87CEEB (Light Sky Blue) -> Gradient in draw
-pub const COLOR_SKY_TOP: Color = hex_color(0x4F, 0xAC, 0xFE);
-pub const COLOR_SKY_BOTTOM: Color = hex_color(0x00, 0xF2, 0xFE);
 
 // UI
 pub const COLOR_UI_BG: Color = hex_color(0x00, 0x24, 0x47); // Deep Blue for UI panels
 
 pub const COLOR_TEXT_SHADOW: Color = Color::new(0.0, 0.0, 0.0, 0.5);
-
-pub const COLOR_TEXT: Color = Color::new(1.0, 1.0, 1.0, 1.0);
 
 // Blocks (Vivid, Juicy colors)
 pub const COLOR_GREEN: Color = hex_color(0x71, 0xF5, 0x5F); // Lime Green
