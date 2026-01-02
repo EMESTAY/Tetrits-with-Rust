@@ -33,6 +33,7 @@ pub struct Game {
     pub level: i32,
     pub lines_cleared_total: i32,
     pub screen_shake: f32,
+    pub ui_pulse: f32, // Timer for UI juice
     bag: Vec<BiduleType>,
 }
 
@@ -57,6 +58,7 @@ impl Game {
             level: 1,
             lines_cleared_total: 0,
             screen_shake: 0.0,
+            ui_pulse: 0.0,
         };
 
         game.fill_bag();
@@ -98,6 +100,14 @@ impl Game {
             self.screen_shake -= dt * 10.0;
             if self.screen_shake < 0.0 {
                 self.screen_shake = 0.0;
+            }
+        }
+
+        // UI Pulse decay
+        if self.ui_pulse > 0.0 {
+            self.ui_pulse -= dt;
+            if self.ui_pulse < 0.0 {
+                self.ui_pulse = 0.0;
             }
         }
 
@@ -264,6 +274,7 @@ impl Game {
 
         if cleared > 0 {
             self.lines_cleared_total += cleared;
+            self.ui_pulse = 0.5; // Trigger UI pulse on clear
 
             // Level up every 10 lines
             let new_level = (self.lines_cleared_total / 10) + 1;

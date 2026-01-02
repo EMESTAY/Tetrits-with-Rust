@@ -2,6 +2,7 @@ use crate::bidule::Bidule;
 use crate::constants::*;
 
 use macroquad::prelude::*;
+use std::f32::consts::PI;
 
 /// Draws a piece centered within a given rectangle
 pub fn draw_preview_piece(x: f32, y: f32, w: f32, h: f32, piece: &Bidule) {
@@ -60,6 +61,12 @@ pub fn draw_preview_piece(x: f32, y: f32, w: f32, h: f32, piece: &Bidule) {
 
 /// Helper to draw a rounded rectangle
 pub fn draw_rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32, color: Color) {
+    if r <= 0.0 {
+        draw_rectangle(x, y, w, h, color);
+        return;
+    }
+    let r = f32::min(r, f32::min(w, h) / 2.0);
+
     // 1. Center Body (Full Width, Vertical Middle)
     draw_rectangle(x, y + r, w, h - 2.0 * r, color);
 
@@ -67,7 +74,7 @@ pub fn draw_rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32, color: Color) {
 
     draw_rectangle(x + r, y + h - r, w - 2.0 * r, r, color);
     let draw_sector = |cx: f32, cy: f32, radius: f32, start_angle: f32, end_angle: f32| {
-        let segments = 10;
+        let segments = 12;
         let step = (end_angle - start_angle) / segments as f32;
 
         for i in 0..segments {
@@ -83,32 +90,10 @@ pub fn draw_rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32, color: Color) {
         }
     };
 
-    //TODO Du coup [pi, 3pi/2] grossomerdo [3.14, 4.71]
-    draw_sector(
-        x + r,
-        y + r,
-        r,
-        std::f32::consts::PI,
-        std::f32::consts::PI * 1.5,
-    );
-
-    draw_sector(
-        x + w - r,
-        y + r,
-        r,
-        std::f32::consts::PI * 1.5,
-        std::f32::consts::PI * 2.0,
-    );
-
-    draw_sector(x + w - r, y + h - r, r, 0.0, std::f32::consts::PI * 0.5);
-
-    draw_sector(
-        x + r,
-        y + h - r,
-        r,
-        std::f32::consts::PI * 0.5,
-        std::f32::consts::PI,
-    );
+    draw_sector(x + r, y + r, r, PI, PI * 1.5);
+    draw_sector(x + w - r, y + r, r, PI * 1.5, PI * 2.0);
+    draw_sector(x + w - r, y + h - r, r, 0.0, PI * 0.5);
+    draw_sector(x + r, y + h - r, r, PI * 0.5, PI);
 }
 
 /// Helper to draw a rectangle with a hardware-accelerated vertex gradient
@@ -412,7 +397,7 @@ pub fn draw_jelly_block(
     }
 }
 
-/// Draws a "Jelly Frame" UI Panel
+/// Draws a "Jelly Frame" UI Panel with premium effects
 pub fn draw_panel(
     x: f32,
     y: f32,
@@ -422,20 +407,36 @@ pub fn draw_panel(
     font: Option<&Font>,
     theme_color: Color,
 ) {
-    let _time = get_time();
+    let time = get_time();
     let border_thick = 8.0;
 
-    // 1. Shadow/Outer Edge (Darker)
+    // --- 1. Procedural Glow (Aura) ---
+    // Multiple layers of expanding translucent rectangles for a soft glow
+    for i in 1..=4 {
+        let alpha = 0.15 / i as f32;
+        let expand = i as f32 * 4.0;
+        let glow_col = Color::new(theme_color.r, theme_color.g, theme_color.b, alpha);
+        draw_rounded_rect(
+            x - border_thick - expand,
+            y - border_thick - expand,
+            w + (border_thick + expand) * 2.0,
+            h + (border_thick + expand) * 2.0,
+            UI_ROUNDING + expand,
+            glow_col,
+        );
+    }
+
+    // --- 2. Shadow/Outer Edge ---
     draw_rounded_rect(
         x - border_thick - 2.0,
         y - border_thick - 2.0,
         w + (border_thick + 2.0) * 2.0,
         h + (border_thick + 2.0) * 2.0,
         UI_ROUNDING + 5.0,
-        Color::new(0.0, 0.0, 0.0, 0.5),
+        Color::new(0.0, 0.0, 0.1, 0.6),
     );
 
-    // 2. Main Jelly Frame Body
+    // --- 3. Main Jelly Frame Body ---
     draw_rounded_rect(
         x - border_thick,
         y - border_thick,
@@ -445,24 +446,47 @@ pub fn draw_panel(
         theme_color,
     );
 
-    // 3. Inner Stroke (Darker connection to glass)
+    // --- 4. Inner Bevel/Stroke ---
     draw_rounded_rect(
         x - 2.0,
         y - 2.0,
         w + 4.0,
         h + 4.0,
         UI_ROUNDING,
-        Color::new(0.0, 0.0, 0.0, 0.3),
+        Color::new(0.0, 0.0, 0.0, 0.4),
     );
 
-    // 4. Glass Background (Inner)
-    let glass_color = Color::new(COLOR_UI_BG.r, COLOR_UI_BG.g, COLOR_UI_BG.b, 0.7);
+    // --- 5. Glass Background ---
+    let glass_color = Color::new(COLOR_UI_BG.r, COLOR_UI_BG.g, COLOR_UI_BG.b, 0.85);
     draw_rounded_rect(x, y, w, h, UI_ROUNDING, glass_color);
 
-    // 5. Glossy Highlights (The "Jelly" Shine)
+    // --- 6. Animated Glass Reflection (Sweep) ---
+    // A light streak that "sweeps" across the panel periodically
+    let sweep_speed = 0.4;
+    let sweep_width = 80.0;
+    let sweep_t = (time * sweep_speed) % 2.5; // Offset to add pause
+    let sweep_x = x - sweep_width + sweep_t as f32 * (w + sweep_width);
 
-    // Top Edge Gloss (Subtle static/pulsing)
-    let pulse = (get_time() * 2.0).sin() as f32 * 0.1 + 0.2;
+    if sweep_t < 1.0 {
+        // Only draw when within bounds (normalized sweep)
+        let alpha = (1.0 - (sweep_t - 0.5).abs() * 2.0).max(0.0) as f32 * 0.15;
+        // Draw diagonal streak clipped to rectangle (simplified: vertical streak)
+        let rect_x = f32::max(x, sweep_x);
+        let rect_w = f32::min(x + w, sweep_x + sweep_width) - rect_x;
+
+        if rect_w > 0.0 {
+            draw_rectangle(
+                rect_x,
+                y,
+                rect_w,
+                h,
+                Color::new(1.0, 1.0, 1.0, alpha),
+            );
+        }
+    }
+
+    // --- 7. Pulsing Rim Highlight ---
+    let pulse = (time * 2.5).sin() as f32 * 0.1 + 0.25;
     draw_rounded_rect(
         x - border_thick + 5.0,
         y - border_thick + 2.0,
@@ -474,44 +498,39 @@ pub fn draw_panel(
 
     if let Some(text) = title {
         let title_x;
-        let title_y = y - 20.0; // Above the panel
+        let title_y = y - 25.0;
 
-        // Center text horizontally
         if let Some(f) = font {
-            let dim = measure_text(text, Some(f), 40, 1.0);
+            let dim = measure_text(text, Some(f), 35, 1.0);
             title_x = x + (w - dim.width) / 2.0;
         } else {
-            title_x = x + 15.0; // Fallback
+            title_x = x + 15.0;
         }
 
-        // Shadow
         if let Some(f) = font {
-            let params = TextParams {
+            // Shadow
+            draw_text_ex(text, title_x + 2.0, title_y + 2.0, TextParams {
                 font: Some(f),
-                font_size: 40,
-                color: Color::new(0.0, 0.0, 0.0, 0.5),
+                font_size: 35,
+                color: Color::new(0.0, 0.0, 0.1, 0.8),
                 ..Default::default()
-            };
-            draw_text_ex(text, title_x + 2.0, title_y + 2.0, params);
+            });
 
-            // Colorize title
-            // Use theme color but brighter
+            // Bright Title
             let title_color = Color::new(
-                f32::min(1.0, theme_color.r + 0.5),
-                f32::min(1.0, theme_color.g + 0.5),
-                f32::min(1.0, theme_color.b + 0.5),
+                f32::min(1.0, theme_color.r + 0.6),
+                f32::min(1.0, theme_color.g + 0.6),
+                f32::min(1.0, theme_color.b + 0.6),
                 1.0,
             );
 
-            let params_main = TextParams {
+            draw_text_ex(text, title_x, title_y, TextParams {
                 font: Some(f),
-                font_size: 40,
+                font_size: 35,
                 color: title_color,
                 ..Default::default()
-            };
-            draw_text_ex(text, title_x, title_y, params_main);
+            });
         } else {
-            // Fallback
             draw_text(text, title_x, title_y, 30.0, WHITE);
         }
     }
@@ -539,12 +558,12 @@ fn draw_play_scene(game: &Game) {
     // Layout Constants
     let board_w = GRID_WIDTH as f32 * BLOCK_SIZE;
     let board_h = GRID_HEIGHT as f32 * BLOCK_SIZE;
-    let spacing = 60.0;
-    let side_panel_w = 240.0;
-    let score_h = 80.0;
+    let spacing = 80.0;
+    let side_panel_w = 260.0;
+    let stats_h = 160.0;
 
     let total_w = side_panel_w + spacing + board_w + spacing + side_panel_w;
-    let total_content_h = score_h + 50.0 + board_h;
+    let total_content_h = board_h;
 
     // Apply Screen Shake
     let shake_x = (fastrand::f32() - 0.5) * game.screen_shake;
@@ -557,48 +576,74 @@ fn draw_play_scene(game: &Game) {
     let grid_x = next_x + side_panel_w + spacing;
     let hold_x = grid_x + board_w + spacing;
 
-    let score_y = offset_y;
-    let grid_y = score_y + score_h + 50.0;
+    let grid_y = offset_y;
+    let stats_y = grid_y;
 
     let font_ref = game.font.as_ref();
 
-    // 0. Score & Level Panel
-    let ui_theme_color = Color::new(0.0, 0.5, 0.9, 1.0);
+    // --- 1. Stats Panel (Left) ---
+    let stats_color = Color::new(0.0, 0.5, 0.9, 1.0);
     draw_panel(
-        grid_x,
-        score_y,
-        board_w,
-        score_h,
+        next_x,
+        stats_y,
+        side_panel_w,
+        stats_h,
         Some("STATUS"),
         font_ref,
-        ui_theme_color,
+        stats_color,
     );
 
     if let Some(f) = font_ref {
-        let score_text = format!("SCORE: {:06}", game.score);
-        let lvl_text = format!("LEVEL: {}", game.level);
+        let pulse_scale = 1.0 + (game.ui_pulse * 0.2);
+        let score_text = format!("{:06}", game.score);
+        let lvl_text = format!("LEVEL {}", game.level);
+        let lines_text = format!("LINES {}", game.lines_cleared_total);
 
-        let params = TextParams {
-            font: Some(f),
-            font_size: 25,
-            color: WHITE,
-            ..Default::default()
+        let draw_stat = |txt: &str, dy: f32, size: u16, col: Color| {
+            let dim = measure_text(txt, Some(f), size, 1.0);
+            let tx = next_x + (side_panel_w - dim.width * pulse_scale) / 2.0;
+            draw_text_ex(txt, tx, stats_y + dy, TextParams {
+                font: Some(f),
+                font_size: (size as f32 * pulse_scale) as u16,
+                color: col,
+                ..Default::default()
+            });
         };
 
-        let dim_s = measure_text(&score_text, Some(f), 25, 1.0);
-        let dim_l = measure_text(&lvl_text, Some(f), 25, 1.0);
+        draw_stat(&score_text, 50.0, 40, GOLD);
+        draw_stat(&lvl_text, 100.0, 30, WHITE);
+        draw_stat(&lines_text, 140.0, 25, Color::new(0.7, 0.9, 1.0, 1.0));
+    }
 
-        // Draw Score on Left, Level on Right inside the panel
-        draw_text_ex(&score_text, grid_x + 20.0, score_y + score_h / 2.0 + dim_s.height / 2.0, params.clone());
-        draw_text_ex(&lvl_text, grid_x + board_w - dim_l.width - 20.0, score_y + score_h / 2.0 + dim_l.height / 2.0, params);
-    } else {
-        draw_text_styled(
-            &format!("S: {:06} L: {}", game.score, game.level),
-            grid_x + 20.0,
-            score_y + 50.0,
-            25.0,
-            WHITE,
-        );
+    // --- 2. Next Piece Panel (Left, below Stats) ---
+    let next_panel_y = stats_y + stats_h + 40.0;
+    let next_panel_h = 180.0;
+    draw_panel(
+        next_x,
+        next_panel_y,
+        side_panel_w,
+        next_panel_h,
+        Some("NEXT"),
+        font_ref,
+        Color::new(0.0, 0.7, 0.3, 1.0),
+    );
+    if let Some(next_piece) = game.next_pieces.first() {
+        draw_preview_piece(next_x, next_panel_y, side_panel_w, next_panel_h, next_piece);
+    }
+
+    // --- 3. Hold Panel (Right) ---
+    let hold_panel_h = 180.0;
+    draw_panel(
+        hold_x,
+        stats_y,
+        side_panel_w,
+        hold_panel_h,
+        Some("HOLD"),
+        font_ref,
+        Color::new(0.7, 0.2, 0.8, 1.0),
+    );
+    if let Some(hold_piece) = &game.hold_piece {
+        draw_preview_piece(hold_x, stats_y, side_panel_w, hold_panel_h, hold_piece);
     }
 
     // 0.5 Music Button (Bottom Left Icon)
@@ -690,7 +735,7 @@ fn draw_play_scene(game: &Game) {
         draw_preview_piece(hold_x, side_panel_y, side_panel_w, side_panel_h, hold_piece);
     }
 
-    // 3. Grid
+    // --- 4. Grid Panel ---
     let grid_border_color = Color::new(0.4, 0.9, 0.1, 1.0);
     draw_panel(
         grid_x,
@@ -842,39 +887,51 @@ fn draw_start_screen(game: &Game) {
     let sw = screen_width();
     let sh = screen_height();
     let font_ref = game.font.as_ref();
+    let time = get_time();
+
+    // --- 1. Floating Background Pieces ---
+    // Draw 10 random pieces slowly drifting
+    for i in 0..10 {
+        let x = (i as f32 * 200.0 + time as f32 * 20.0) % sw;
+        let y = (i as f32 * 100.0 + (time as f32 * 0.5).sin() * 50.0) % sh;
+        let color = Color::new(1.0, 1.0, 1.0, 0.05);
+        draw_circle(x, y, 40.0, color);
+    }
 
     // Darken background
-    draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.4));
+    draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.5));
 
-    let panel_w = 600.0;
-    let panel_h = 400.0;
+    let panel_w = 700.0;
+    let panel_h = 450.0;
     let px = (sw - panel_w) / 2.0;
     let py = (sh - panel_h) / 2.0;
 
-    draw_panel(px, py, panel_w, panel_h, Some("RUST TETRIS JELLY"), font_ref, COLOR_PURPLE);
+    // Breathing Logo effect
+    let breathe = (time * 2.0).sin() as f32 * 5.0;
+    draw_panel(px, py + breathe, panel_w, panel_h, Some("RUST TETRIS JELLY"), font_ref, COLOR_PURPLE);
 
     if let Some(f) = font_ref {
         let msg = "PRESS [SPACE] TO START";
-        let dim = measure_text(msg, Some(f), 45, 1.0);
+        let dim = measure_text(msg, Some(f), 50, 1.0);
         let tx = px + (panel_w - dim.width) / 2.0;
-        let ty = py + panel_h / 2.0 + 20.0;
+        let ty = py + panel_h / 2.0 + 30.0;
 
-        let p = (get_time() * 3.0).sin() as f32 * 0.2 + 0.8;
+        let p = (time * 3.0).sin() as f32 * 0.2 + 0.8;
         let col = Color::new(p, p, 1.0, 1.0);
 
         draw_text_ex(msg, tx, ty, TextParams {
             font: Some(f),
-            font_size: 45,
+            font_size: 50,
             color: col,
             ..Default::default()
         });
 
-        let sub_msg = "⬅️ ➡️ to move | ⬆️ to rotate | SPACE to drop";
-        let sdim = measure_text(sub_msg, Some(f), 25, 1.0);
-        draw_text_ex(sub_msg, px + (panel_w - sdim.width) / 2.0, py + panel_h - 40.0, TextParams {
+        let sub_msg = "⬅️ ➡️ to move | ⬆️ to rotate | SPACE to drop | C to hold";
+        let sdim = measure_text(sub_msg, Some(f), 24, 1.0);
+        draw_text_ex(sub_msg, px + (panel_w - sdim.width) / 2.0, py + panel_h - 50.0, TextParams {
             font: Some(f),
-            font_size: 25,
-            color: WHITE,
+            font_size: 24,
+            color: Color::new(0.8, 0.8, 0.8, 1.0),
             ..Default::default()
         });
     }
@@ -885,10 +942,11 @@ fn draw_game_over(game: &Game) {
     let sh = screen_height();
     let font_ref = game.font.as_ref();
 
-    draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.6));
+    // Thick dark overlay
+    draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.1, 0.7));
 
-    let panel_w = 500.0;
-    let panel_h = 300.0;
+    let panel_w = 600.0;
+    let panel_h = 350.0;
     let px = (sw - panel_w) / 2.0;
     let py = (sh - panel_h) / 2.0;
 
@@ -896,20 +954,20 @@ fn draw_game_over(game: &Game) {
 
     if let Some(f) = font_ref {
         let score_txt = format!("FINAL SCORE: {}", game.score);
-        let dim = measure_text(&score_txt, Some(f), 40, 1.0);
+        let dim = measure_text(&score_txt, Some(f), 45, 1.0);
         draw_text_ex(&score_txt, px + (panel_w - dim.width) / 2.0, py + panel_h / 2.0, TextParams {
             font: Some(f),
-            font_size: 40,
-            color: WHITE,
+            font_size: 45,
+            color: GOLD,
             ..Default::default()
         });
 
         let restart_txt = "PRESS [R] TO RESTART";
-        let rdim = measure_text(restart_txt, Some(f), 25, 1.0);
-        draw_text_ex(restart_txt, px + (panel_w - rdim.width) / 2.0, py + panel_h - 50.0, TextParams {
+        let rdim = measure_text(restart_txt, Some(f), 30, 1.0);
+        draw_text_ex(restart_txt, px + (panel_w - rdim.width) / 2.0, py + panel_h - 60.0, TextParams {
             font: Some(f),
-            font_size: 25,
-            color: COLOR_YELLOW,
+            font_size: 30,
+            color: WHITE,
             ..Default::default()
         });
     }
