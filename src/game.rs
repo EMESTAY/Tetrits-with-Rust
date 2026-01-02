@@ -34,6 +34,7 @@ pub struct Game {
     pub lines_cleared_total: i32,
     pub screen_shake: f32,
     pub ui_pulse: f32, // Timer for UI juice
+    pub menu_selection: usize, // 0: Start, 1: Options, 2: Exit
     bag: Vec<BiduleType>,
 }
 
@@ -59,6 +60,7 @@ impl Game {
             lines_cleared_total: 0,
             screen_shake: 0.0,
             ui_pulse: 0.0,
+            menu_selection: 0,
         };
 
         game.fill_bag();
@@ -113,8 +115,36 @@ impl Game {
 
         match self.state {
             GameState::Start => {
+                if is_key_pressed(KeyCode::Down) {
+                    self.menu_selection = (self.menu_selection + 1) % 3;
+                    self.audio.play_hold(); // reusing a bloop sound
+                }
+                if is_key_pressed(KeyCode::Up) {
+                    if self.menu_selection == 0 {
+                        self.menu_selection = 2;
+                    } else {
+                        self.menu_selection -= 1;
+                    }
+                    self.audio.play_hold();
+                }
+
                 if is_key_pressed(KeyCode::Space) || is_key_pressed(KeyCode::Enter) {
-                    self.state = GameState::Playing;
+                    match self.menu_selection {
+                        0 => {
+                            self.state = GameState::Playing;
+                            self.audio.play_level_up(); // Confirm sound
+                        }
+                        1 => {
+                            // Option: Toggle Music
+                            self.is_music_playing = !self.is_music_playing;
+                            self.audio.toggle_music(self.is_music_playing);
+                        }
+                        2 => {
+                            // Exit
+                            std::process::exit(0);
+                        }
+                        _ => {}
+                    }
                 }
             }
             GameState::Playing => {
@@ -257,8 +287,8 @@ impl Game {
                 let ny = y + dy;
 
                 if nx >= 0 && nx < GRID_WIDTH as i32 && ny >= 0 && ny < GRID_HEIGHT as i32 {
-                    if let Some(c) = self.grid.cells[ny as usize][nx as usize] {
-                        if c == p_color {
+                    if let Some(cell) = &self.grid.cells[ny as usize][nx as usize] {
+                        if cell.color == p_color {
                             same_color = true;
                         } else {
                             diff_color = true;
@@ -270,18 +300,18 @@ impl Game {
         self.audio.play_land(same_color, diff_color);
 
         self.grid.lock_piece(&self.current_piece);
-        let cleared = self.grid.clear_lines();
+        let cleared_rows = self.grid.clear_lines(); // Now returns Vec<usize>
+        let cleared_count = cleared_rows.len() as i32;
 
-        if cleared > 0 {
-            self.lines_cleared_total += cleared;
-            self.ui_pulse = 0.5; // Trigger UI pulse on clear
+        if cleared_count > 0 {
+            self.lines_cleared_total += cleared_count;
+            self.ui_pulse = 0.5;
 
             // Level up every 10 lines
             let new_level = (self.lines_cleared_total / 10) + 1;
             if new_level > self.level {
                 self.level = new_level;
                 self.audio.play_level_up();
-                // Add a "LEVEL UP" effect
                 self.effects.push(ComicEffect::new(
                     "LEVEL UP!".to_string(),
                     screen_width() / 2.0,
@@ -290,42 +320,95 @@ impl Game {
                 ));
             }
 
-            if cleared == 4 {
+            if cleared_count == 4 {
                 self.audio.play_tetris();
-                self.screen_shake = 15.0; // Big shake for Tetris
+                self.screen_shake = 15.0;
             } else {
-                self.screen_shake = 5.0 * cleared as f32;
+                self.screen_shake = 5.0 * cleared_count as f32;
             }
 
-            let text = match cleared {
+            let text = match cleared_count {
                 1 => "ZAP!",
                 2 => "POW!",
                 3 => "BAM!",
                 4 => "KABOOM!",
                 _ => "!",
             };
+            
+            // Effect text center of action
+           let center_y = if !cleared_rows.is_empty() {
+                cleared_rows[0] as f32 * BLOCK_SIZE
+            } else {
+                self.current_piece.pos.y as f32 * BLOCK_SIZE
+            };
+
             self.effects.push(ComicEffect::new(
                 text.to_string(),
-                (self.current_piece.pos.x as f32 * BLOCK_SIZE) + 150.0,
-                (self.current_piece.pos.y as f32 * BLOCK_SIZE) + 100.0,
+                (GRID_WIDTH as f32 * BLOCK_SIZE) / 2.0 + 100.0, // Center of grid roughly (offset for UI)
+                 center_y + 100.0,
                 RED,
             ));
 
-            for _ in 0..50 {
-                self.particles.push(Particle::new(
-                    (self.current_piece.pos.x as f32 * BLOCK_SIZE) + 60.0,
-                    (self.current_piece.pos.y as f32 * BLOCK_SIZE) + 60.0,
-                    Color::new(
-                        0.5 + fastrand::f32() * 0.5,
-                        0.5 + fastrand::f32() * 0.5,
-                        0.5 + fastrand::f32() * 0.5,
-                        1.0,
-                    ),
-                ));
+            // --- TIERED PARTICLE SPAWNING ---
+            use crate::effects::ParticleType;
+            
+            for &row_y in &cleared_rows {
+                let py = row_y as f32 * BLOCK_SIZE + BLOCK_SIZE / 2.0;
+                
+                // Spawn across the width of the row
+                for x in 0..GRID_WIDTH {
+                    let px = x as f32 * BLOCK_SIZE + BLOCK_SIZE / 2.0;
+                    
+                    // Base Colors
+                    let base_color = match cleared_count {
+                        4 => Color::new(fastrand::f32(), fastrand::f32(), fastrand::f32(), 1.0), // Rainbow
+                        3 => Color::new(1.0, 0.4 + fastrand::f32() * 0.4, 0.0, 1.0), // Orange/Red
+                        2 => Color::new(0.2, 1.0, 0.2, 1.0), // Green/Toxic
+                        _ => Color::new(0.4, 0.6, 1.0, 1.0), // Blue/Water
+                    };
+
+                    match cleared_count {
+                        1 => {
+                            // Tier 1: Small Splash
+                            if fastrand::f32() < 0.3 {
+                                self.particles.push(Particle::new(px, py, base_color, ParticleType::Droplet));
+                            }
+                        },
+                        2 => {
+                            // Tier 2: Splash + Bubbles
+                            if fastrand::f32() < 0.5 {
+                                self.particles.push(Particle::new(px, py, base_color, ParticleType::Droplet));
+                            }
+                            if fastrand::f32() < 0.2 {
+                                self.particles.push(Particle::new(px, py, base_color, ParticleType::Bubble));
+                            }
+                        },
+                        3 => {
+                            // Tier 3: Viscous Goo
+                             if fastrand::f32() < 0.6 {
+                                self.particles.push(Particle::new(px, py, base_color, ParticleType::Droplet));
+                            }
+                            if fastrand::f32() < 0.3 {
+                                self.particles.push(Particle::new(px, py, base_color, ParticleType::GooChunk));
+                            }
+                        },
+                        4 => {
+                             // Tier 4: Total Meltdown
+                            self.particles.push(Particle::new(px, py, base_color, ParticleType::Droplet));
+                            if fastrand::f32() < 0.5 {
+                                self.particles.push(Particle::new(px, py, base_color, ParticleType::Bubble));
+                            }
+                            if fastrand::f32() < 0.5 {
+                                self.particles.push(Particle::new(px, py, base_color, ParticleType::GooChunk));
+                            }
+                        },
+                        _ => {}
+                    }
+                }
             }
         }
 
-        self.score += match cleared {
+        self.score += match cleared_count {
             1 => 100 * self.level,
             2 => 300 * self.level,
             3 => 500 * self.level,

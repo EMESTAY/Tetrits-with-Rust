@@ -6,6 +6,8 @@ mod effects;
 mod game;
 mod grid;
 mod sound_effects;
+mod rect_utils; // New module
+mod ui;         // New module
 
 use crate::sound_effects::AudioSystem;
 use game::Game;

@@ -1,8 +1,9 @@
 use crate::bidule::Bidule;
 use crate::constants::*;
+use crate::rect_utils::draw_rounded_rect;
+use crate::ui::*;
 
 use macroquad::prelude::*;
-use std::f32::consts::PI;
 
 /// Draws a piece centered within a given rectangle
 pub fn draw_preview_piece(x: f32, y: f32, w: f32, h: f32, piece: &Bidule) {
@@ -55,100 +56,12 @@ pub fn draw_preview_piece(x: f32, y: f32, w: f32, h: f32, piece: &Bidule) {
             piece.color,
             neighbors,
             false,
+            0,
         );
     }
 }
 
-/// Helper to draw a rounded rectangle
-pub fn draw_rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32, color: Color) {
-    if r <= 0.0 {
-        draw_rectangle(x, y, w, h, color);
-        return;
-    }
-    let r = f32::min(r, f32::min(w, h) / 2.0);
-
-    // 1. Center Body (Full Width, Vertical Middle)
-    draw_rectangle(x, y + r, w, h - 2.0 * r, color);
-
-    draw_rectangle(x + r, y, w - 2.0 * r, r, color);
-
-    draw_rectangle(x + r, y + h - r, w - 2.0 * r, r, color);
-    let draw_sector = |cx: f32, cy: f32, radius: f32, start_angle: f32, end_angle: f32| {
-        let segments = 12;
-        let step = (end_angle - start_angle) / segments as f32;
-
-        for i in 0..segments {
-            let a1 = start_angle + step * i as f32;
-            let a2 = start_angle + step * (i + 1) as f32;
-
-            draw_triangle(
-                Vec2::new(cx, cy),
-                Vec2::new(cx + a1.cos() * radius, cy + a1.sin() * radius),
-                Vec2::new(cx + a2.cos() * radius, cy + a2.sin() * radius),
-                color,
-            );
-        }
-    };
-
-    draw_sector(x + r, y + r, r, PI, PI * 1.5);
-    draw_sector(x + w - r, y + r, r, PI * 1.5, PI * 2.0);
-    draw_sector(x + w - r, y + h - r, r, 0.0, PI * 0.5);
-    draw_sector(x + r, y + h - r, r, PI * 0.5, PI);
-}
-
-/// Helper to draw a rectangle with a hardware-accelerated vertex gradient
-pub fn draw_mesh_gradient_rect(
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    c1: Color,
-    c2: Color,
-    is_vertical: bool,
-) {
-    let (v1_col, v2_col, v3_col, v4_col) = if is_vertical {
-        (c1, c1, c2, c2)
-    } else {
-        (c1, c2, c1, c2)
-    };
-
-    let vertices = [
-        Vertex {
-            position: Vec3::new(x, y, 0.0),
-            uv: Vec2::ZERO,
-            color: v1_col.into(),
-            normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: Vec3::new(x + w, y, 0.0),
-            uv: Vec2::ZERO,
-            color: v2_col.into(),
-            normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: Vec3::new(x, y + h, 0.0),
-            uv: Vec2::ZERO,
-            color: v3_col.into(),
-            normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: Vec3::new(x + w, y + h, 0.0),
-            uv: Vec2::ZERO,
-            color: v4_col.into(),
-            normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
-        },
-    ];
-
-    let indices = [0, 1, 2, 1, 2, 3];
-
-    let mesh = Mesh {
-        vertices: vertices.to_vec(),
-        indices: indices.to_vec(),
-        texture: None,
-    };
-
-    draw_mesh(&mesh);
-}
+// draw_rounded_rect and _draw_mesh_gradient_rect moved to rect_utils.rs
 
 #[derive(Clone, Copy)]
 pub struct Connectivity {
@@ -166,6 +79,7 @@ pub fn draw_jelly_block(
     color: Color,
     neighbors: Connectivity,
     is_ghost: bool,
+    bubble_seed: usize,
 ) {
     let padding = 1.0;
 
@@ -218,6 +132,7 @@ pub fn draw_jelly_block(
 
         // Base rounded rect (The "Node") - Always our color
         let my_layer_color = color_transform(color);
+
         draw_rounded_rect(
             cx,
             cy,
@@ -227,90 +142,71 @@ pub fn draw_jelly_block(
             my_layer_color,
         );
 
+        // --- TRAPPED BUBBLES (Organic/Aerated look) ---
+        if bubble_seed != 0 {
+             let time = get_time() as f32;
+             let bubble_layer_color = Color::new(1.0, 1.0, 1.0, 0.15); // Faint white
+             
+             // Calculate center for safe positioning
+             let center_x = cx + current_size / 2.0;
+             let center_y = cy + current_size / 2.0;
+             let max_offset = current_size / 4.0; // Keep bubbles well within center
+     
+             // Bubble 1
+             let b1_raw = (bubble_seed % 10) as f32;
+             let b1_off_x = (b1_raw - 5.0) / 5.0 * max_offset;
+             let b1_off_y = ((bubble_seed % 7) as f32 - 3.5) / 3.5 * max_offset;
+             
+             draw_circle(
+                 center_x + b1_off_x + (time * 2.0).sin() * 1.0, 
+                 center_y + b1_off_y + (time * 1.5).cos() * 1.0, 
+                 3.0, 
+                 bubble_layer_color
+             );
+     
+             // Bubble 2
+             let b2_off_x = -b1_off_x * 0.6; // Mirror and reduce
+             let b2_off_y = -b1_off_y * 0.6;
+             draw_circle(
+                 center_x + b2_off_x + (time * 1.7).cos() * 1.0, 
+                 center_y + b2_off_y + (time * 2.2).sin() * 1.0, 
+                 2.0, 
+                 bubble_layer_color
+             );
+     
+             // Bubble 3 (Tiny)
+             draw_circle(
+                 center_x + b1_off_y * 0.5, 
+                 center_y + b2_off_x * 0.5, 
+                 1.5, 
+                 bubble_layer_color
+             );
+        }
+
         // Connectors (The "Bridges")
         let bridge_overlap = 3.0;
 
         // Top Connector
-        if let Some(nc) = neighbors.top {
-            let neighbor_layer_color = color_transform(nc);
+        if let Some(_nc) = neighbors.top {
             let h = (cy - y) + bridge_overlap;
-
-            if nc == color {
-                draw_rectangle(cx, y, current_size, h, my_layer_color);
-            } else {
-                // PREMIUM: Smooth Hardware Gradient from Neighbor (Top) to Us (Bottom)
-                draw_mesh_gradient_rect(
-                    cx,
-                    y,
-                    current_size,
-                    h,
-                    neighbor_layer_color,
-                    my_layer_color,
-                    true,
-                );
-            }
+            draw_rectangle(cx, y, current_size, h, my_layer_color);
         }
         // Bottom Connector
-        if let Some(nc) = neighbors.bottom {
-            let neighbor_layer_color = color_transform(nc);
+        if let Some(_nc) = neighbors.bottom {
             let start_y = cy + current_size - bridge_overlap;
             let h = (y + size) - start_y;
-
-            if nc == color {
-                draw_rectangle(cx, start_y, current_size, h, my_layer_color);
-            } else {
-                // PREMIUM: Smooth Hardware Gradient from Us (Top) to Neighbor (Bottom)
-                draw_mesh_gradient_rect(
-                    cx,
-                    start_y,
-                    current_size,
-                    h,
-                    my_layer_color,
-                    neighbor_layer_color,
-                    true,
-                );
-            }
+            draw_rectangle(cx, start_y, current_size, h, my_layer_color);
         }
         // Left Connector
-        if let Some(nc) = neighbors.left {
-            let neighbor_layer_color = color_transform(nc);
+        if let Some(_nc) = neighbors.left {
             let w = (cx - x) + bridge_overlap;
-
-            if nc == color {
-                draw_rectangle(x, cy, w, current_size, my_layer_color);
-            } else {
-                // PREMIUM: Smooth Hardware Gradient from Neighbor (Left) to Us (Right)
-                draw_mesh_gradient_rect(
-                    x,
-                    cy,
-                    w,
-                    current_size,
-                    neighbor_layer_color,
-                    my_layer_color,
-                    false,
-                );
-            }
+            draw_rectangle(x, cy, w, current_size, my_layer_color);
         }
         // Right Connector
-        if let Some(nc) = neighbors.right {
-            let neighbor_layer_color = color_transform(nc);
+        if let Some(_nc) = neighbors.right {
             let start_x = cx + current_size - bridge_overlap;
             let w = (x + size) - start_x;
-
-            if nc == color {
-                draw_rectangle(start_x, cy, w, current_size, my_layer_color);
-            } else {
-                // PREMIUM: Smooth Hardware Gradient from Us (Left) to Neighbor (Right)
-                draw_mesh_gradient_rect(
-                    start_x,
-                    cy,
-                    w,
-                    current_size,
-                    my_layer_color,
-                    neighbor_layer_color,
-                    false,
-                );
-            }
+            draw_rectangle(start_x, cy, w, current_size, my_layer_color);
         }
 
         // Corner Fills - simplified to our color for performance, as they are small
@@ -397,144 +293,7 @@ pub fn draw_jelly_block(
     }
 }
 
-/// Draws a "Jelly Frame" UI Panel with premium effects
-pub fn draw_panel(
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    title: Option<&str>,
-    font: Option<&Font>,
-    theme_color: Color,
-) {
-    let time = get_time();
-    let border_thick = 8.0;
-
-    // --- 1. Procedural Glow (Aura) ---
-    // Multiple layers of expanding translucent rectangles for a soft glow
-    for i in 1..=4 {
-        let alpha = 0.15 / i as f32;
-        let expand = i as f32 * 4.0;
-        let glow_col = Color::new(theme_color.r, theme_color.g, theme_color.b, alpha);
-        draw_rounded_rect(
-            x - border_thick - expand,
-            y - border_thick - expand,
-            w + (border_thick + expand) * 2.0,
-            h + (border_thick + expand) * 2.0,
-            UI_ROUNDING + expand,
-            glow_col,
-        );
-    }
-
-    // --- 2. Shadow/Outer Edge ---
-    draw_rounded_rect(
-        x - border_thick - 2.0,
-        y - border_thick - 2.0,
-        w + (border_thick + 2.0) * 2.0,
-        h + (border_thick + 2.0) * 2.0,
-        UI_ROUNDING + 5.0,
-        Color::new(0.0, 0.0, 0.1, 0.6),
-    );
-
-    // --- 3. Main Jelly Frame Body ---
-    draw_rounded_rect(
-        x - border_thick,
-        y - border_thick,
-        w + border_thick * 2.0,
-        h + border_thick * 2.0,
-        UI_ROUNDING + 2.0,
-        theme_color,
-    );
-
-    // --- 4. Inner Bevel/Stroke ---
-    draw_rounded_rect(
-        x - 2.0,
-        y - 2.0,
-        w + 4.0,
-        h + 4.0,
-        UI_ROUNDING,
-        Color::new(0.0, 0.0, 0.0, 0.4),
-    );
-
-    // --- 5. Glass Background ---
-    let glass_color = Color::new(COLOR_UI_BG.r, COLOR_UI_BG.g, COLOR_UI_BG.b, 0.85);
-    draw_rounded_rect(x, y, w, h, UI_ROUNDING, glass_color);
-
-    // --- 6. Animated Glass Reflection (Sweep) ---
-    // A light streak that "sweeps" across the panel periodically
-    let sweep_speed = 0.4;
-    let sweep_width = 80.0;
-    let sweep_t = (time * sweep_speed) % 2.5; // Offset to add pause
-    let sweep_x = x - sweep_width + sweep_t as f32 * (w + sweep_width);
-
-    if sweep_t < 1.0 {
-        // Only draw when within bounds (normalized sweep)
-        let alpha = (1.0 - (sweep_t - 0.5).abs() * 2.0).max(0.0) as f32 * 0.15;
-        // Draw diagonal streak clipped to rectangle (simplified: vertical streak)
-        let rect_x = f32::max(x, sweep_x);
-        let rect_w = f32::min(x + w, sweep_x + sweep_width) - rect_x;
-
-        if rect_w > 0.0 {
-            draw_rectangle(
-                rect_x,
-                y,
-                rect_w,
-                h,
-                Color::new(1.0, 1.0, 1.0, alpha),
-            );
-        }
-    }
-
-    // --- 7. Pulsing Rim Highlight ---
-    let pulse = (time * 2.5).sin() as f32 * 0.1 + 0.25;
-    draw_rounded_rect(
-        x - border_thick + 5.0,
-        y - border_thick + 2.0,
-        w + border_thick * 2.0 - 10.0,
-        4.0,
-        4.0,
-        Color::new(1.0, 1.0, 1.0, pulse),
-    );
-
-    if let Some(text) = title {
-        let title_x;
-        let title_y = y - 25.0;
-
-        if let Some(f) = font {
-            let dim = measure_text(text, Some(f), 35, 1.0);
-            title_x = x + (w - dim.width) / 2.0;
-        } else {
-            title_x = x + 15.0;
-        }
-
-        if let Some(f) = font {
-            // Shadow
-            draw_text_ex(text, title_x + 2.0, title_y + 2.0, TextParams {
-                font: Some(f),
-                font_size: 35,
-                color: Color::new(0.0, 0.0, 0.1, 0.8),
-                ..Default::default()
-            });
-
-            // Bright Title
-            let title_color = Color::new(
-                f32::min(1.0, theme_color.r + 0.6),
-                f32::min(1.0, theme_color.g + 0.6),
-                f32::min(1.0, theme_color.b + 0.6),
-                1.0,
-            );
-
-            draw_text_ex(text, title_x, title_y, TextParams {
-                font: Some(f),
-                font_size: 35,
-                color: title_color,
-                ..Default::default()
-            });
-        } else {
-            draw_text(text, title_x, title_y, 30.0, WHITE);
-        }
-    }
-}
+// draw_panel moved to ui.rs
 
 use crate::game::{Game, GameState};
 
@@ -546,7 +305,7 @@ pub fn draw_game(game: &Game) {
     // 0. Game States (Start / Game Over / Playing)
     match game.state {
         GameState::Start => {
-            draw_start_screen(game);
+            crate::ui::draw_start_screen(game);
         }
         GameState::Playing | GameState::GameOver => {
             draw_play_scene(game);
@@ -560,7 +319,6 @@ fn draw_play_scene(game: &Game) {
     let board_h = GRID_HEIGHT as f32 * BLOCK_SIZE;
     let spacing = 80.0;
     let side_panel_w = 260.0;
-    let stats_h = 160.0;
 
     let total_w = side_panel_w + spacing + board_w + spacing + side_panel_w;
     let total_content_h = board_h;
@@ -581,43 +339,44 @@ fn draw_play_scene(game: &Game) {
 
     let font_ref = game.font.as_ref();
 
-    // --- 1. Stats Panel (Left) ---
-    let stats_color = Color::new(0.0, 0.5, 0.9, 1.0);
+    // --- 1. Level Panel (Top Left) ---
+    // User requested "level window a bit smaller on top"
+    let level_panel_h = 100.0;
+    let level_color = Color::new(0.0, 0.5, 0.9, 1.0);
+    
     draw_panel(
         next_x,
         stats_y,
         side_panel_w,
-        stats_h,
-        Some("STATUS"),
+        level_panel_h,
+        Some("LEVEL"),
         font_ref,
-        stats_color,
+        level_color,
     );
 
     if let Some(f) = font_ref {
         let pulse_scale = 1.0 + (game.ui_pulse * 0.2);
-        let score_text = format!("{:06}", game.score);
-        let lvl_text = format!("LEVEL {}", game.level);
-        let lines_text = format!("LINES {}", game.lines_cleared_total);
-
-        let draw_stat = |txt: &str, dy: f32, size: u16, col: Color| {
-            let dim = measure_text(txt, Some(f), size, 1.0);
-            let tx = next_x + (side_panel_w - dim.width * pulse_scale) / 2.0;
-            draw_text_ex(txt, tx, stats_y + dy, TextParams {
-                font: Some(f),
-                font_size: (size as f32 * pulse_scale) as u16,
-                color: col,
-                ..Default::default()
-            });
-        };
-
-        draw_stat(&score_text, 50.0, 40, GOLD);
-        draw_stat(&lvl_text, 100.0, 30, WHITE);
-        draw_stat(&lines_text, 140.0, 25, Color::new(0.7, 0.9, 1.0, 1.0));
+        let lvl_text = format!("{}", game.level);
+        
+        // Center the level number big
+        let dim = measure_text(&lvl_text, Some(f), 60, 1.0);
+        let tx = next_x + (side_panel_w - dim.width * pulse_scale) / 2.0;
+        let ty = stats_y + 70.0;
+        
+        draw_text_ex(&lvl_text, tx, ty, TextParams {
+            font: Some(f),
+            font_size: (60.0 * pulse_scale) as u16,
+            color: WHITE,
+            ..Default::default()
+        });
     }
 
-    // --- 2. Next Piece Panel (Left, below Stats) ---
-    let next_panel_y = stats_y + stats_h + 40.0;
-    let next_panel_h = 180.0;
+    // --- 2. Next Piece Panel (Left, below Level) ---
+    // User requested "winsows need to be spaced on from an other"
+    let spacing_vertical = 100.0; // Increased from 50 to 100
+    let next_panel_y = stats_y + level_panel_h + spacing_vertical;
+    let next_panel_h = 250.0; 
+    
     draw_panel(
         next_x,
         next_panel_y,
@@ -631,7 +390,7 @@ fn draw_play_scene(game: &Game) {
         draw_preview_piece(next_x, next_panel_y, side_panel_w, next_panel_h, next_piece);
     }
 
-    // --- 3. Hold Panel (Right) ---
+    // --- 3. Hold Panel (Top Right) ---
     let hold_panel_h = 180.0;
     draw_panel(
         hold_x,
@@ -645,6 +404,49 @@ fn draw_play_scene(game: &Game) {
     if let Some(hold_piece) = &game.hold_piece {
         draw_preview_piece(hold_x, stats_y, side_panel_w, hold_panel_h, hold_piece);
     }
+
+    // --- 4. Score Panel (Right, below Hold) ---
+    // User requested "score put it on the right under hold"
+    let score_panel_y = stats_y + hold_panel_h + spacing_vertical;
+    let score_panel_h = 150.0; 
+    
+    draw_panel(
+        hold_x,
+        score_panel_y,
+        side_panel_w,
+        score_panel_h,
+        Some("SCORE"),
+        font_ref,
+        GOLD,
+    );
+
+    if let Some(f) = font_ref {
+        let pulse_scale = 1.0 + (game.ui_pulse * 0.2);
+        let score_text = format!("{}", game.score);
+        let lines_text = format!("LINES: {}", game.lines_cleared_total);
+
+        // Score Big
+        let dim = measure_text(&score_text, Some(f), 50, 1.0);
+        let tx = hold_x + (side_panel_w - dim.width * pulse_scale) / 2.0;
+        
+        draw_text_ex(&score_text, tx, score_panel_y + 80.0, TextParams {
+            font: Some(f),
+            font_size: (50.0 * pulse_scale) as u16,
+            color: WHITE,
+            ..Default::default()
+        });
+
+        // Lines Small below
+        let dim_l = measure_text(&lines_text, Some(f), 30, 1.0);
+        let lx = hold_x + (side_panel_w - dim_l.width) / 2.0;
+         draw_text_ex(&lines_text, lx, score_panel_y + 120.0, TextParams {
+            font: Some(f),
+            font_size: 30,
+            color: Color::new(0.8, 0.8, 0.8, 1.0),
+            ..Default::default()
+        });
+    }
+
 
     // 0.5 Music Button (Bottom Left Icon)
     let btn_size = 50.0;
@@ -700,41 +502,6 @@ fn draw_play_scene(game: &Game) {
         draw_line(btn_x + 45.0, cy - 5.0, btn_x + 35.0, cy + 5.0, 3.0, WHITE);
     }
 
-    // 1. Next Pieces
-    let next_color = Color::new(0.0, 0.6, 1.0, 1.0);
-    let side_panel_h = 220.0;
-    let side_panel_y = grid_y - 30.0;
-
-    draw_panel(
-        next_x,
-        side_panel_y,
-        side_panel_w,
-        side_panel_h,
-        Some("NEXT"),
-        font_ref,
-        next_color,
-    );
-
-    if let Some(next_piece) = game.next_pieces.first() {
-        draw_preview_piece(next_x, side_panel_y, side_panel_w, side_panel_h, next_piece);
-    }
-
-    // 2. Hold Piece
-    let hold_color = Color::new(0.6, 0.0, 1.0, 1.0);
-    draw_panel(
-        hold_x,
-        side_panel_y,
-        side_panel_w,
-        side_panel_h,
-        Some("HOLD"),
-        font_ref,
-        hold_color,
-    );
-
-    if let Some(hold_piece) = &game.hold_piece {
-        draw_preview_piece(hold_x, side_panel_y, side_panel_w, side_panel_h, hold_piece);
-    }
-
     // --- 4. Grid Panel ---
     let grid_border_color = Color::new(0.4, 0.9, 0.1, 1.0);
     draw_panel(
@@ -772,12 +539,12 @@ fn draw_play_scene(game: &Game) {
     // Draw Grid Blocks
     for y in 0..GRID_HEIGHT {
         for x in 0..GRID_WIDTH {
-            if let Some(color) = game.grid.cells[y][x] {
+            if let Some(cell) = &game.grid.cells[y][x] {
                 let check_neighbor = |nx: i32, ny: i32| -> Option<Color> {
                     if nx < 0 || nx >= GRID_WIDTH as i32 || ny < 0 || ny >= GRID_HEIGHT as i32 {
                         return None;
                     }
-                    game.grid.cells[ny as usize][nx as usize]
+                    game.grid.cells[ny as usize][nx as usize].as_ref().map(|c| c.color)
                 };
 
                 let neighbors = Connectivity {
@@ -791,9 +558,10 @@ fn draw_play_scene(game: &Game) {
                     grid_x + x as f32 * BLOCK_SIZE,
                     grid_y + y as f32 * BLOCK_SIZE,
                     BLOCK_SIZE,
-                    color,
+                    cell.color,
                     neighbors,
                     false,
+                    cell.bubble_seed,
                 );
             }
         }
@@ -842,12 +610,13 @@ fn draw_play_scene(game: &Game) {
                 game.current_piece.color,
                 neighbors,
                 true,
+                0,
             );
         }
     }
 
     // Draw Current Piece
-    for p in game.current_piece.positions.iter() {
+    for (i, p) in game.current_piece.positions.iter().enumerate() {
         let x = game.current_piece.pos.x + p.x;
         let y = game.current_piece.pos.y + p.y;
         if y >= 0 {
@@ -860,6 +629,7 @@ fn draw_play_scene(game: &Game) {
                 game.current_piece.color,
                 neighbors,
                 false,
+                game.current_piece.seeds[i],
             );
         }
     }
@@ -879,102 +649,12 @@ fn draw_play_scene(game: &Game) {
 
     // Overlay Game Over
     if game.state == GameState::GameOver {
-        draw_game_over(game);
+        crate::ui::draw_game_over(game);
     }
 }
 
-fn draw_start_screen(game: &Game) {
-    let sw = screen_width();
-    let sh = screen_height();
-    let font_ref = game.font.as_ref();
-    let time = get_time();
+// draw_start_screen removed
 
-    // --- 1. Floating Background Pieces ---
-    // Draw 10 random pieces slowly drifting
-    for i in 0..10 {
-        let x = (i as f32 * 200.0 + time as f32 * 20.0) % sw;
-        let y = (i as f32 * 100.0 + (time as f32 * 0.5).sin() * 50.0) % sh;
-        let color = Color::new(1.0, 1.0, 1.0, 0.05);
-        draw_circle(x, y, 40.0, color);
-    }
+// draw_game_over removed
 
-    // Darken background
-    draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.5));
-
-    let panel_w = 700.0;
-    let panel_h = 450.0;
-    let px = (sw - panel_w) / 2.0;
-    let py = (sh - panel_h) / 2.0;
-
-    // Breathing Logo effect
-    let breathe = (time * 2.0).sin() as f32 * 5.0;
-    draw_panel(px, py + breathe, panel_w, panel_h, Some("RUST TETRIS JELLY"), font_ref, COLOR_PURPLE);
-
-    if let Some(f) = font_ref {
-        let msg = "PRESS [SPACE] TO START";
-        let dim = measure_text(msg, Some(f), 50, 1.0);
-        let tx = px + (panel_w - dim.width) / 2.0;
-        let ty = py + panel_h / 2.0 + 30.0;
-
-        let p = (time * 3.0).sin() as f32 * 0.2 + 0.8;
-        let col = Color::new(p, p, 1.0, 1.0);
-
-        draw_text_ex(msg, tx, ty, TextParams {
-            font: Some(f),
-            font_size: 50,
-            color: col,
-            ..Default::default()
-        });
-
-        let sub_msg = "⬅️ ➡️ to move | ⬆️ to rotate | SPACE to drop | C to hold";
-        let sdim = measure_text(sub_msg, Some(f), 24, 1.0);
-        draw_text_ex(sub_msg, px + (panel_w - sdim.width) / 2.0, py + panel_h - 50.0, TextParams {
-            font: Some(f),
-            font_size: 24,
-            color: Color::new(0.8, 0.8, 0.8, 1.0),
-            ..Default::default()
-        });
-    }
-}
-
-fn draw_game_over(game: &Game) {
-    let sw = screen_width();
-    let sh = screen_height();
-    let font_ref = game.font.as_ref();
-
-    // Thick dark overlay
-    draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.1, 0.7));
-
-    let panel_w = 600.0;
-    let panel_h = 350.0;
-    let px = (sw - panel_w) / 2.0;
-    let py = (sh - panel_h) / 2.0;
-
-    draw_panel(px, py, panel_w, panel_h, Some("GAME OVER"), font_ref, COLOR_RED);
-
-    if let Some(f) = font_ref {
-        let score_txt = format!("FINAL SCORE: {}", game.score);
-        let dim = measure_text(&score_txt, Some(f), 45, 1.0);
-        draw_text_ex(&score_txt, px + (panel_w - dim.width) / 2.0, py + panel_h / 2.0, TextParams {
-            font: Some(f),
-            font_size: 45,
-            color: GOLD,
-            ..Default::default()
-        });
-
-        let restart_txt = "PRESS [R] TO RESTART";
-        let rdim = measure_text(restart_txt, Some(f), 30, 1.0);
-        draw_text_ex(restart_txt, px + (panel_w - rdim.width) / 2.0, py + panel_h - 60.0, TextParams {
-            font: Some(f),
-            font_size: 30,
-            color: WHITE,
-            ..Default::default()
-        });
-    }
-}
-
-/// Helper for basic styled text
-pub fn draw_text_styled(text: &str, x: f32, y: f32, size: f32, color: Color) {
-    draw_text(text, x + 2.0, y + 2.0, size, COLOR_TEXT_SHADOW);
-    draw_text(text, x, y, size, color);
-}
+// draw_utils removed
