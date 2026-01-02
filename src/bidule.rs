@@ -25,75 +25,52 @@ pub struct Bidule {
     pub color: Color,
     pub rotation_state: usize,
     pub pos: Point,
+    pub seeds: [usize; 4],
 }
 
 impl Bidule {
     pub fn new(kind: BiduleType) -> Self {
         let (positions, color) = match kind {
+            // ... (omitted match arms for brevity, logic remains same)
             BiduleType::I => (
-                [
-                    Point { x: 0, y: 1 },
-                    Point { x: 1, y: 1 },
-                    Point { x: 2, y: 1 },
-                    Point { x: 3, y: 1 },
-                ],
+                [Point { x: 0, y: 1 }, Point { x: 1, y: 1 }, Point { x: 2, y: 1 }, Point { x: 3, y: 1 }],
                 COLOR_I,
             ),
             BiduleType::O => (
-                [
-                    Point { x: 1, y: 0 },
-                    Point { x: 2, y: 0 },
-                    Point { x: 1, y: 1 },
-                    Point { x: 2, y: 1 },
-                ],
+                [Point { x: 1, y: 0 }, Point { x: 2, y: 0 }, Point { x: 1, y: 1 }, Point { x: 2, y: 1 }],
                 COLOR_O,
             ),
             BiduleType::T => (
-                [
-                    Point { x: 1, y: 0 },
-                    Point { x: 0, y: 1 },
-                    Point { x: 1, y: 1 },
-                    Point { x: 2, y: 1 },
-                ],
+                [Point { x: 1, y: 0 }, Point { x: 0, y: 1 }, Point { x: 1, y: 1 }, Point { x: 2, y: 1 }],
                 COLOR_T,
             ),
             BiduleType::S => (
-                [
-                    Point { x: 1, y: 0 },
-                    Point { x: 2, y: 0 },
-                    Point { x: 0, y: 1 },
-                    Point { x: 1, y: 1 },
-                ],
+                [Point { x: 1, y: 0 }, Point { x: 2, y: 0 }, Point { x: 0, y: 1 }, Point { x: 1, y: 1 }],
                 COLOR_S,
             ),
             BiduleType::Z => (
-                [
-                    Point { x: 0, y: 0 },
-                    Point { x: 1, y: 0 },
-                    Point { x: 1, y: 1 },
-                    Point { x: 2, y: 1 },
-                ],
+                [Point { x: 0, y: 0 }, Point { x: 1, y: 0 }, Point { x: 1, y: 1 }, Point { x: 2, y: 1 }],
                 COLOR_Z,
             ),
             BiduleType::J => (
-                [
-                    Point { x: 0, y: 0 },
-                    Point { x: 0, y: 1 },
-                    Point { x: 1, y: 1 },
-                    Point { x: 2, y: 1 },
-                ],
+                [Point { x: 0, y: 0 }, Point { x: 0, y: 1 }, Point { x: 1, y: 1 }, Point { x: 2, y: 1 }],
                 COLOR_J,
             ),
             BiduleType::L => (
-                [
-                    Point { x: 2, y: 0 },
-                    Point { x: 0, y: 1 },
-                    Point { x: 1, y: 1 },
-                    Point { x: 2, y: 1 },
-                ],
+                [Point { x: 2, y: 0 }, Point { x: 0, y: 1 }, Point { x: 1, y: 1 }, Point { x: 2, y: 1 }],
                 COLOR_L,
             ),
         };
+
+        let mut seeds = [0; 4];
+        for i in 0..4 {
+            // Random seeds. Use 0 for "no bubbles" (20% chance?).
+            if fastrand::f32() < 0.2 {
+                seeds[i] = 0;
+            } else {
+                seeds[i] = fastrand::usize(1..10000);
+            }
+        }
 
         Bidule {
             kind,
@@ -101,6 +78,7 @@ impl Bidule {
             color,
             rotation_state: 0,
             pos: Point { x: 3, y: 0 },
+            seeds,
         }
     }
 

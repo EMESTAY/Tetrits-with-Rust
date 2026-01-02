@@ -2,8 +2,14 @@ use crate::bidule::Bidule;
 use crate::constants::*;
 use macroquad::prelude::*;
 
+#[derive(Clone, Copy, Debug)]
+pub struct Cell {
+    pub color: Color,
+    pub bubble_seed: usize,
+}
+
 pub struct Grid {
-    pub cells: [[Option<Color>; GRID_WIDTH]; GRID_HEIGHT],
+    pub cells: [[Option<Cell>; GRID_WIDTH]; GRID_HEIGHT],
 }
 
 impl Grid {
@@ -33,40 +39,47 @@ impl Grid {
     }
 
     pub fn lock_piece(&mut self, piece: &Bidule) {
-        for p in piece.positions.iter() {
+        for (i, p) in piece.positions.iter().enumerate() {
             let x = (piece.pos.x + p.x) as usize;
             let y = (piece.pos.y + p.y) as usize;
 
             if x < GRID_WIDTH && y < GRID_HEIGHT {
-                self.cells[y][x] = Some(piece.color);
+                self.cells[y][x] = Some(Cell {
+                    color: piece.color,
+                    bubble_seed: piece.seeds[i],
+                });
             }
         }
     }
 
-    pub fn clear_lines(&mut self) -> i32 {
-        let mut lines_cleared = 0;
-        let mut y = GRID_HEIGHT - 1;
+    pub fn clear_lines(&mut self) -> Vec<usize> {
+        let mut cleared_rows = Vec::new();
 
-        while y > 0 {
-            let mut full_line = true;
-            for x in 0..GRID_WIDTH {
-                if self.cells[y][x].is_none() {
-                    full_line = false;
-                    break;
-                }
-            }
-
+        // 1. Identify full lines
+        for y in 0..GRID_HEIGHT {
+            let full_line = (0..GRID_WIDTH).all(|x| self.cells[y][x].is_some());
             if full_line {
-                lines_cleared += 1;
-
-                for row in (1..=y).rev() {
-                    self.cells[row] = self.cells[row - 1];
-                }
-                self.cells[0] = [None; GRID_WIDTH];
-            } else {
-                y -= 1;
+                cleared_rows.push(y);
             }
         }
-        lines_cleared
+
+        // 2. Compact grid (if needed)
+        if !cleared_rows.is_empty() {
+            let mut new_cells = [[None; GRID_WIDTH]; GRID_HEIGHT];
+            let mut target_y = GRID_HEIGHT - 1;
+
+            for src_y in (0..GRID_HEIGHT).rev() {
+                if !cleared_rows.contains(&src_y) {
+                    new_cells[target_y] = self.cells[src_y];
+                    if target_y > 0 {
+                        target_y -= 1;
+                    }
+                }
+            }
+            // Fill remaining top rows with None (already done by init, but implicit here because target_y stops)
+            self.cells = new_cells;
+        }
+
+        cleared_rows
     }
 }
