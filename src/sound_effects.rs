@@ -107,6 +107,17 @@ impl AudioSystem {
             },
         );
     }
+
+    pub fn play_level_up(&self) {
+        // Reuse hold sound for level up for now as a nice chime
+        play_sound(
+            &self.sfx_hold,
+            PlaySoundParams {
+                looped: false,
+                volume: 1.0,
+            },
+        );
+    }
 }
 
 // Implement Clone to allow Game restart logic (Sound is a handle, so cheap clone)

@@ -517,19 +517,25 @@ pub fn draw_panel(
     }
 }
 
-use crate::game::Game;
-
-/// Helper for basic styled text
-pub fn draw_text_styled(text: &str, x: f32, y: f32, size: f32, color: Color) {
-    draw_text(text, x + 2.0, y + 2.0, size, COLOR_TEXT_SHADOW);
-    draw_text(text, x, y, size, color);
-}
+use crate::game::{Game, GameState};
 
 /// Main drawing function for the game
 pub fn draw_game(game: &Game) {
     // 1. Background (Nature Theme)
     game.background.draw();
 
+    // 0. Game States (Start / Game Over / Playing)
+    match game.state {
+        GameState::Start => {
+            draw_start_screen(game);
+        }
+        GameState::Playing | GameState::GameOver => {
+            draw_play_scene(game);
+        }
+    }
+}
+
+fn draw_play_scene(game: &Game) {
     // Layout Constants
     let board_w = GRID_WIDTH as f32 * BLOCK_SIZE;
     let board_h = GRID_HEIGHT as f32 * BLOCK_SIZE;
@@ -540,8 +546,12 @@ pub fn draw_game(game: &Game) {
     let total_w = side_panel_w + spacing + board_w + spacing + side_panel_w;
     let total_content_h = score_h + 50.0 + board_h;
 
-    let offset_x = (screen_width() - total_w) / 2.0;
-    let offset_y = (screen_height() - total_content_h) / 2.0;
+    // Apply Screen Shake
+    let shake_x = (fastrand::f32() - 0.5) * game.screen_shake;
+    let shake_y = (fastrand::f32() - 0.5) * game.screen_shake;
+
+    let offset_x = (screen_width() - total_w) / 2.0 + shake_x;
+    let offset_y = (screen_height() - total_content_h) / 2.0 + shake_y;
 
     let next_x = offset_x;
     let grid_x = next_x + side_panel_w + spacing;
@@ -552,37 +562,41 @@ pub fn draw_game(game: &Game) {
 
     let font_ref = game.font.as_ref();
 
-    // 0. Score Panel
-    let score_color = Color::new(0.0, 0.5, 0.9, 1.0);
+    // 0. Score & Level Panel
+    let ui_theme_color = Color::new(0.0, 0.5, 0.9, 1.0);
     draw_panel(
         grid_x,
         score_y,
         board_w,
         score_h,
-        Some("SCORE"),
+        Some("STATUS"),
         font_ref,
-        score_color,
+        ui_theme_color,
     );
 
     if let Some(f) = font_ref {
-        let score_text = format!("{:06}", game.score);
-        let dim = measure_text(&score_text, Some(f), 30, 1.0);
-        let score_x = grid_x + (board_w - dim.width) / 2.0;
-        let center_y = score_y + score_h / 2.0 + dim.height / 3.0;
+        let score_text = format!("SCORE: {:06}", game.score);
+        let lvl_text = format!("LEVEL: {}", game.level);
 
         let params = TextParams {
             font: Some(f),
-            font_size: 30,
+            font_size: 25,
             color: WHITE,
             ..Default::default()
         };
-        draw_text_ex(&score_text, score_x, center_y, params);
+
+        let dim_s = measure_text(&score_text, Some(f), 25, 1.0);
+        let dim_l = measure_text(&lvl_text, Some(f), 25, 1.0);
+
+        // Draw Score on Left, Level on Right inside the panel
+        draw_text_ex(&score_text, grid_x + 20.0, score_y + score_h / 2.0 + dim_s.height / 2.0, params.clone());
+        draw_text_ex(&lvl_text, grid_x + board_w - dim_l.width - 20.0, score_y + score_h / 2.0 + dim_l.height / 2.0, params);
     } else {
         draw_text_styled(
-            &format!("{:06}", game.score),
+            &format!("S: {:06} L: {}", game.score, game.level),
             grid_x + 20.0,
             score_y + 50.0,
-            30.0,
+            25.0,
             WHITE,
         );
     }
@@ -805,6 +819,9 @@ pub fn draw_game(game: &Game) {
         }
     }
 
+    // Draw Effects & Particles (Relative to grid) ---
+    // Actually effects are screen-space in current game.rs implementation, let's keep them as is.
+
     // Draw Effects
     for e in &game.effects {
         e.draw();
@@ -815,27 +832,91 @@ pub fn draw_game(game: &Game) {
         p.draw(grid_x, grid_y);
     }
 
-    if game.game_over {
-        draw_rectangle(
-            0.0,
-            0.0,
-            screen_width(),
-            screen_height(),
-            Color::new(0.0, 0.0, 0.0, 0.7),
-        );
-        draw_text_styled(
-            "GAME OVER",
-            screen_width() / 2.0 - 150.0,
-            screen_height() / 2.0,
-            80.0,
-            RED,
-        );
-        draw_text_styled(
-            "Press R to Reset",
-            screen_width() / 2.0 - 100.0,
-            screen_height() / 2.0 + 80.0,
-            30.0,
-            WHITE,
-        );
+    // Overlay Game Over
+    if game.state == GameState::GameOver {
+        draw_game_over(game);
     }
+}
+
+fn draw_start_screen(game: &Game) {
+    let sw = screen_width();
+    let sh = screen_height();
+    let font_ref = game.font.as_ref();
+
+    // Darken background
+    draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.4));
+
+    let panel_w = 600.0;
+    let panel_h = 400.0;
+    let px = (sw - panel_w) / 2.0;
+    let py = (sh - panel_h) / 2.0;
+
+    draw_panel(px, py, panel_w, panel_h, Some("RUST TETRIS JELLY"), font_ref, COLOR_PURPLE);
+
+    if let Some(f) = font_ref {
+        let msg = "PRESS [SPACE] TO START";
+        let dim = measure_text(msg, Some(f), 45, 1.0);
+        let tx = px + (panel_w - dim.width) / 2.0;
+        let ty = py + panel_h / 2.0 + 20.0;
+
+        let p = (get_time() * 3.0).sin() as f32 * 0.2 + 0.8;
+        let col = Color::new(p, p, 1.0, 1.0);
+
+        draw_text_ex(msg, tx, ty, TextParams {
+            font: Some(f),
+            font_size: 45,
+            color: col,
+            ..Default::default()
+        });
+
+        let sub_msg = "⬅️ ➡️ to move | ⬆️ to rotate | SPACE to drop";
+        let sdim = measure_text(sub_msg, Some(f), 25, 1.0);
+        draw_text_ex(sub_msg, px + (panel_w - sdim.width) / 2.0, py + panel_h - 40.0, TextParams {
+            font: Some(f),
+            font_size: 25,
+            color: WHITE,
+            ..Default::default()
+        });
+    }
+}
+
+fn draw_game_over(game: &Game) {
+    let sw = screen_width();
+    let sh = screen_height();
+    let font_ref = game.font.as_ref();
+
+    draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.6));
+
+    let panel_w = 500.0;
+    let panel_h = 300.0;
+    let px = (sw - panel_w) / 2.0;
+    let py = (sh - panel_h) / 2.0;
+
+    draw_panel(px, py, panel_w, panel_h, Some("GAME OVER"), font_ref, COLOR_RED);
+
+    if let Some(f) = font_ref {
+        let score_txt = format!("FINAL SCORE: {}", game.score);
+        let dim = measure_text(&score_txt, Some(f), 40, 1.0);
+        draw_text_ex(&score_txt, px + (panel_w - dim.width) / 2.0, py + panel_h / 2.0, TextParams {
+            font: Some(f),
+            font_size: 40,
+            color: WHITE,
+            ..Default::default()
+        });
+
+        let restart_txt = "PRESS [R] TO RESTART";
+        let rdim = measure_text(restart_txt, Some(f), 25, 1.0);
+        draw_text_ex(restart_txt, px + (panel_w - rdim.width) / 2.0, py + panel_h - 50.0, TextParams {
+            font: Some(f),
+            font_size: 25,
+            color: COLOR_YELLOW,
+            ..Default::default()
+        });
+    }
+}
+
+/// Helper for basic styled text
+pub fn draw_text_styled(text: &str, x: f32, y: f32, size: f32, color: Color) {
+    draw_text(text, x + 2.0, y + 2.0, size, COLOR_TEXT_SHADOW);
+    draw_text(text, x, y, size, color);
 }

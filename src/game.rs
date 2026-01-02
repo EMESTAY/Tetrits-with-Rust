@@ -7,6 +7,13 @@ use crate::sound_effects::AudioSystem;
 use macroquad::prelude::*;
 use macroquad::text::Font;
 
+#[derive(PartialEq)]
+pub enum GameState {
+    Start,
+    Playing,
+    GameOver,
+}
+
 pub struct Game {
     pub grid: Grid,
     pub current_piece: Bidule,
@@ -14,9 +21,7 @@ pub struct Game {
     pub hold_piece: Option<Bidule>,
     pub can_hold: bool,
     pub score: i32,
-    pub game_over: bool,
     pub last_fall_time: f64,
-    pub fall_speed: f64,
     // Visuals
     pub effects: Vec<ComicEffect>,
     pub particles: Vec<Particle>,
@@ -24,6 +29,10 @@ pub struct Game {
     pub font: Option<Font>,
     pub audio: AudioSystem,
     pub is_music_playing: bool,
+    pub state: GameState,
+    pub level: i32,
+    pub lines_cleared_total: i32,
+    pub screen_shake: f32,
     bag: Vec<BiduleType>,
 }
 
@@ -36,9 +45,7 @@ impl Game {
             hold_piece: None,
             can_hold: true,
             score: 0,
-            game_over: false,
             last_fall_time: get_time(),
-            fall_speed: 0.5,
             effects: Vec::new(),
             particles: Vec::new(),
             background: NatureBackground::new(),
@@ -46,6 +53,10 @@ impl Game {
             audio,
             bag: Vec::new(),
             is_music_playing: true,
+            state: GameState::Start,
+            level: 1,
+            lines_cleared_total: 0,
+            screen_shake: 0.0,
         };
 
         game.fill_bag();
@@ -80,29 +91,52 @@ impl Game {
     }
 
     pub fn update(&mut self) {
-        if self.game_over {
-            if is_key_pressed(KeyCode::R) {
-                let font = self.font.take();
-                let audio = self.audio.clone();
-                *self = Game::new(font, audio);
+        let dt = get_frame_time();
+
+        // Shake decay
+        if self.screen_shake > 0.0 {
+            self.screen_shake -= dt * 10.0;
+            if self.screen_shake < 0.0 {
+                self.screen_shake = 0.0;
             }
-            return;
         }
 
-        let time = get_time();
-
-        self.handle_input();
-
-        let is_soft_drop = is_key_down(KeyCode::Down);
-        let speed = if is_soft_drop { 0.05 } else { self.fall_speed };
-
-        if time - self.last_fall_time > speed {
-            self.current_piece.pos.y += 1;
-            if self.grid.is_collision(&self.current_piece) {
-                self.current_piece.pos.y -= 1;
-                self.lock_and_spawn();
+        match self.state {
+            GameState::Start => {
+                if is_key_pressed(KeyCode::Space) || is_key_pressed(KeyCode::Enter) {
+                    self.state = GameState::Playing;
+                }
             }
-            self.last_fall_time = time;
+            GameState::Playing => {
+                let time = get_time();
+
+                self.handle_input();
+
+                let is_soft_drop = is_key_down(KeyCode::Down);
+                let speed = if is_soft_drop {
+                    0.05
+                } else {
+                    // Level-based speed: 0.5 at lvl 1, 0.4 at lvl 2, etc.
+                    (0.5 * (0.9f64.powi(self.level - 1))).max(0.05)
+                };
+
+                if time - self.last_fall_time > speed {
+                    self.current_piece.pos.y += 1;
+                    if self.grid.is_collision(&self.current_piece) {
+                        self.current_piece.pos.y -= 1;
+                        self.lock_and_spawn();
+                    }
+                    self.last_fall_time = time;
+                }
+            }
+            GameState::GameOver => {
+                if is_key_pressed(KeyCode::R) {
+                    let font = self.font.take();
+                    let audio = self.audio.clone();
+                    *self = Game::new(font, audio);
+                    self.state = GameState::Playing; // Start immediately on reset
+                }
+            }
         }
 
         self.effects.retain_mut(|e| e.update());
@@ -228,11 +262,30 @@ impl Game {
         self.grid.lock_piece(&self.current_piece);
         let cleared = self.grid.clear_lines();
 
-        if cleared == 4 {
-            self.audio.play_tetris();
-        }
-
         if cleared > 0 {
+            self.lines_cleared_total += cleared;
+
+            // Level up every 10 lines
+            let new_level = (self.lines_cleared_total / 10) + 1;
+            if new_level > self.level {
+                self.level = new_level;
+                self.audio.play_level_up();
+                // Add a "LEVEL UP" effect
+                self.effects.push(ComicEffect::new(
+                    "LEVEL UP!".to_string(),
+                    screen_width() / 2.0,
+                    screen_height() / 2.0,
+                    GOLD,
+                ));
+            }
+
+            if cleared == 4 {
+                self.audio.play_tetris();
+                self.screen_shake = 15.0; // Big shake for Tetris
+            } else {
+                self.screen_shake = 5.0 * cleared as f32;
+            }
+
             let text = match cleared {
                 1 => "ZAP!",
                 2 => "POW!",
@@ -262,10 +315,10 @@ impl Game {
         }
 
         self.score += match cleared {
-            1 => 100,
-            2 => 300,
-            3 => 500,
-            4 => 800,
+            1 => 100 * self.level,
+            2 => 300 * self.level,
+            3 => 500 * self.level,
+            4 => 800 * self.level,
             _ => 0,
         };
 
@@ -275,7 +328,7 @@ impl Game {
         self.can_hold = true;
 
         if self.grid.is_collision(&self.current_piece) {
-            self.game_over = true;
+            self.state = GameState::GameOver;
         }
     }
 }
