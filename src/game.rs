@@ -1,7 +1,8 @@
 use crate::background::NatureBackground;
 use crate::bidule::{Bidule, BiduleType};
+use crate::bonuses::{ActiveBonus, Bonus};
 use crate::constants::*;
-use crate::effects::{ComicEffect, Particle};
+use crate::effects::{ComicEffect, Particle, ParticleType};
 use crate::grid::Grid;
 use crate::sound_effects::AudioSystem;
 use macroquad::prelude::*;
@@ -11,6 +12,7 @@ use macroquad::text::Font;
 pub enum GameState {
     Start,
     Playing,
+    ChooseBonus,
     GameOver,
 }
 
@@ -36,6 +38,11 @@ pub struct Game {
     pub ui_pulse: f32, // Timer for UI juice
     pub menu_selection: usize, // 0: Start, 1: Options, 2: Exit
     bag: Vec<BiduleType>,
+    
+    // Bonus System
+    pub bonus_options: Vec<Bonus>,
+    pub bonus_selection_idx: usize,
+    pub active_bonuses: Vec<ActiveBonus>,
 }
 
 impl Game {
@@ -61,6 +68,11 @@ impl Game {
             screen_shake: 0.0,
             ui_pulse: 0.0,
             menu_selection: 0,
+            
+            // Bonus System
+            bonus_options: Vec::new(),
+            bonus_selection_idx: 0,
+            active_bonuses: Vec::new(),
         };
 
         game.fill_bag();
@@ -147,6 +159,28 @@ impl Game {
                     }
                 }
             }
+            GameState::ChooseBonus => {
+                 if is_key_pressed(KeyCode::Right) {
+                    self.bonus_selection_idx = (self.bonus_selection_idx + 1) % self.bonus_options.len();
+                    self.audio.play_hold();
+                }
+                if is_key_pressed(KeyCode::Left) {
+                    if self.bonus_selection_idx == 0 {
+                        self.bonus_selection_idx = self.bonus_options.len() - 1;
+                    } else {
+                        self.bonus_selection_idx -= 1;
+                    }
+                    self.audio.play_hold();
+                }
+                if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::Space) {
+                    // Activate Bonus
+                    if let Some(bonus) = self.bonus_options.get(self.bonus_selection_idx) {
+                        self.activate_bonus(bonus.clone());
+                    }
+                    self.state = GameState::Playing;
+                    self.audio.play_level_up();
+                }
+            }
             GameState::Playing => {
                 let time = get_time();
 
@@ -156,8 +190,22 @@ impl Game {
                 let speed = if is_soft_drop {
                     0.05
                 } else {
-                    // Level-based speed: 0.5 at lvl 1, 0.4 at lvl 2, etc.
-                    (0.5 * (0.9f64.powi(self.level - 1))).max(0.05)
+                    // Level-based speed
+                    let base_speed = (0.5 * (0.9f64.powi(self.level - 1))).max(0.05);
+                    
+                    // CHILL Bonus: 50% slower
+                    let mut speed_mod = 1.0;
+                    if self.active_bonuses.iter().any(|b| b.kind == crate::bonuses::BonusType::Chill) {
+                        speed_mod *= 1.5;
+                    }
+                    
+                    // TIME ANCHOR: 10% slower per stack
+                    let anchors = self.active_bonuses.iter().filter(|b| b.kind == crate::bonuses::BonusType::TimeAnchor).count();
+                    if anchors > 0 {
+                        speed_mod *= 1.0 + (0.1 * anchors as f64);
+                    }
+                    
+                    base_speed * speed_mod
                 };
 
                 if time - self.last_fall_time > speed {
@@ -181,6 +229,13 @@ impl Game {
 
         self.effects.retain_mut(|e| e.update());
         self.particles.retain_mut(|p| p.update());
+        
+        // Update active bonuses
+        let dt = get_frame_time();
+        self.active_bonuses.retain_mut(|b| {
+            b.timer -= dt;
+            b.timer > 0.0
+        });
 
         self.background.update();
     }
@@ -300,6 +355,125 @@ impl Game {
         self.audio.play_land(same_color, diff_color);
 
         self.grid.lock_piece(&self.current_piece);
+
+        // --- ONE-TIME BONUSES (Bomb / Laser) ---
+        let mut bonuses_to_remove = Vec::new();
+        for (i, bonus) in self.active_bonuses.iter().enumerate() {
+            match bonus.kind {
+                crate::bonuses::BonusType::Bomb => {
+                    // Explode 3x3 around each block of the locked piece
+                    // Or just around the center? Let's do around each block for massive destruction, or just one big boom?
+                    // Let's do: For each block in the piece, explode radius 1
+                    for p in self.current_piece.positions.iter() {
+                        let cx = self.current_piece.pos.x + p.x;
+                        let cy = self.current_piece.pos.y + p.y;
+                        for dy in -1..=1 {
+                            for dx in -1..=1 {
+                                let nx = cx + dx;
+                                let ny = cy + dy;
+                                if nx >= 0 && nx < GRID_WIDTH as i32 && ny >= 0 && ny < GRID_HEIGHT as i32 {
+                                    self.grid.cells[ny as usize][nx as usize] = None;
+                                    // Visual?
+                                    for _ in 0..5 {
+                                        self.particles.push(Particle::new(
+                                            (nx as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
+                                            (ny as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
+                                            RED, 
+                                            ParticleType::Explosion
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    self.screen_shake = 30.0;
+                    self.audio.play_tetris(); // Boom sound replacement?
+                    bonuses_to_remove.push(i);
+                }
+                crate::bonuses::BonusType::VerticalLaser => {
+                    // Clear columns occupied by the piece
+                    let mut cols = std::collections::HashSet::new();
+                    for p in self.current_piece.positions.iter() {
+                        cols.insert(self.current_piece.pos.x + p.x);
+                    }
+                    for c in cols {
+                         if c >= 0 && c < GRID_WIDTH as i32 {
+                            for y in 0..GRID_HEIGHT {
+                                self.grid.cells[y][c as usize] = None;
+                                // Sparks along the beam
+                                if fastrand::f32() < 0.3 {
+                                    self.particles.push(Particle::new(
+                                        (c as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
+                                        (y as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
+                                        YELLOW, 
+                                        ParticleType::Spark
+                                    ));
+                                }
+                            }
+                         }
+                    }
+                    self.screen_shake = 10.0;
+                    bonuses_to_remove.push(i);
+                }
+                crate::bonuses::BonusType::Drill => {
+                    // Same as laser basically in this implementation?
+                    // Or maybe it clears *below* the piece?
+                    // Let's implement Drill as clearing the columns BELOW the piece positions
+                    for p in self.current_piece.positions.iter() {
+                        let cx = self.current_piece.pos.x + p.x;
+                        let cy = self.current_piece.pos.y + p.y;
+                        if cx >= 0 && cx < GRID_WIDTH as i32 {
+                             for y in cy..GRID_HEIGHT as i32 {
+                                 if y >= 0 {
+                                     self.grid.cells[y as usize][cx as usize] = None;
+                                 }
+                             }
+                        }
+                    }
+                    bonuses_to_remove.push(i);
+                }
+                crate::bonuses::BonusType::VolatileGrid => {
+                     // 10% chance to explode 3x3
+                     if fastrand::f32() < 0.10 {
+                        // Explosion logic (copied from Bomb but maybe smaller?)
+                        // Reuse Bomb logic 3x3
+                        for p in self.current_piece.positions.iter() {
+                            let cx = self.current_piece.pos.x + p.x;
+                            let cy = self.current_piece.pos.y + p.y;
+                            for dy in -1..=1 {
+                                for dx in -1..=1 {
+                                    let nx = cx + dx;
+                                    let ny = cy + dy;
+                                    if nx >= 0 && nx < GRID_WIDTH as i32 && ny >= 0 && ny < GRID_HEIGHT as i32 {
+                                        self.grid.cells[ny as usize][nx as usize] = None;
+                                        // Explosion particles
+                                        for _ in 0..3 {
+                                           self.particles.push(Particle::new(
+                                                (nx as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
+                                                (ny as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
+                                                ORANGE, 
+                                                ParticleType::Explosion
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        self.effects.push(ComicEffect::new("BOOM!".to_string(), 
+                            self.current_piece.pos.x as f32 * BLOCK_SIZE, 
+                            self.current_piece.pos.y as f32 * BLOCK_SIZE, RED));
+                        self.screen_shake = 20.0;
+                     }
+                }
+                _ => {}
+            }
+        }
+        // Remove used bonuses (reverse order to keep indices valid? No, active_bonuses logic needed)
+        // efficient removal:
+        for idx in bonuses_to_remove.iter().rev() {
+             self.active_bonuses.remove(*idx);
+        }
+
         let cleared_rows = self.grid.clear_lines(); // Now returns Vec<usize>
         let cleared_count = cleared_rows.len() as i32;
 
@@ -318,6 +492,11 @@ impl Game {
                     screen_height() / 2.0,
                     GOLD,
                 ));
+                
+                // TRIGGER BONUS SELECTION
+                self.state = GameState::ChooseBonus;
+                self.bonus_options = crate::bonuses::Bonus::get_random_set(3);
+                self.bonus_selection_idx = 1; // Center default
             }
 
             if cleared_count == 4 {
@@ -415,6 +594,18 @@ impl Game {
             4 => 800 * self.level,
             _ => 0,
         };
+        
+        // Apply Score Multiplier
+        if self.active_bonuses.iter().any(|b| b.kind == crate::bonuses::BonusType::ScoreMultiplier) {
+             self.score *= 2; // Simple double
+        }
+        
+        // Apply Golden Pickaxe (+20% per stack)
+        let pickaxes = self.active_bonuses.iter().filter(|b| b.kind == crate::bonuses::BonusType::GoldenPickaxe).count();
+        if pickaxes > 0 {
+            let mult = 1.0 + 0.2 * pickaxes as f32;
+            self.score = (self.score as f32 * mult) as i32;
+        }
 
         self.current_piece = self.next_pieces.remove(0);
         let p = self.get_next_piece();
@@ -422,7 +613,62 @@ impl Game {
         self.can_hold = true;
 
         if self.grid.is_collision(&self.current_piece) {
-            self.state = GameState::GameOver;
+             // Life Insurance Check
+             if let Some(pos) = self.active_bonuses.iter().position(|b| b.kind == crate::bonuses::BonusType::LifeInsurance) {
+                 // Consume Life Insurance
+                 self.active_bonuses.remove(pos);
+                 self.grid.cells = [[None; GRID_WIDTH]; GRID_HEIGHT]; // Clear board!
+                 self.effects.push(ComicEffect::new("SAVED!".to_string(), screen_width()/2.0, screen_height()/2.0, PINK));
+                 self.audio.play_level_up(); // Sound feedback
+             } else {
+                 self.state = GameState::GameOver;
+             }
+        }
+    }
+
+    pub fn activate_bonus(&mut self, bonus: Bonus) {
+        use crate::bonuses::BonusType;
+        
+        // Some bonuses might have immediate effects, others are stored
+        let duration = match bonus.kind {
+            BonusType::Chill => 60.0, // 60 seconds
+            BonusType::ScoreMultiplier => 60.0, // Lasts for 60s
+            // Relics are Infinite
+            BonusType::TimeAnchor | BonusType::GoldenPickaxe | BonusType::VolatileGrid | BonusType::LifeInsurance => 999999.0,
+            // Others are "One Time Use" on next lock
+            _ => 9999.0, // Until used
+        };
+
+        self.active_bonuses.push(ActiveBonus {
+            kind: bonus.kind,
+            timer: duration,
+        });
+
+        // Visual Feedback
+        self.effects.push(ComicEffect::new(
+            format!("BONUS: {}", bonus.name),
+            screen_width() / 2.0,
+            screen_height() / 2.0 + 50.0,
+            bonus.color,
+        ));
+        
+        // Immediate Particle Burst for activation
+        let cx = screen_width() / 2.0;
+        let cy = screen_height() / 2.0;
+        for _ in 0..20 {
+             let ptype = match bonus.kind {
+                 BonusType::Chill => ParticleType::Snowflake,
+                 BonusType::LifeInsurance => ParticleType::Heart,
+                 BonusType::Bomb | BonusType::VolatileGrid => ParticleType::Explosion,
+                 BonusType::VerticalLaser => ParticleType::Spark,
+                 _ => ParticleType::Bubble,
+             };
+             self.particles.push(Particle::new(
+                 (cx - 100.0) + fastrand::f32() * 200.0,
+                 (cy - 100.0) + fastrand::f32() * 200.0,
+                 bonus.color,
+                 ptype
+             ));
         }
     }
 }

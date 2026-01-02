@@ -1,5 +1,6 @@
 mod background;
 mod bidule;
+mod bonuses;    // New module
 mod constants;
 mod draw;
 mod effects;

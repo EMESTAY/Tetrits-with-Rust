@@ -307,8 +307,15 @@ pub fn draw_game(game: &Game) {
         GameState::Start => {
             crate::ui::draw_start_screen(game);
         }
-        GameState::Playing | GameState::GameOver => {
+        GameState::Playing | GameState::GameOver | GameState::ChooseBonus => {
             draw_play_scene(game);
+            
+            if game.state == GameState::ChooseBonus {
+                crate::ui::draw_bonus_selection(game);
+            }
+            if game.state == GameState::GameOver {
+                crate::ui::draw_game_over(game);
+            }
         }
     }
 }

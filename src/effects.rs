@@ -35,6 +35,10 @@ pub enum ParticleType {
     Droplet,  // Fails down, bounces
     Bubble,   // Floats up, wobbles
     GooChunk, // Heavy, sticky
+    Explosion, // Fast radial burst
+    Spark,    // Very fast, short life
+    Snowflake,// Slow fall, sway
+    Heart,    // Floats up slowly
 }
 
 pub struct Particle {
@@ -67,6 +71,21 @@ impl Particle {
             ParticleType::GooChunk => {
                 let speed = 1.0 + fastrand::f32() * 3.0;
                 (angle.cos() * speed, -1.0 - fastrand::f32() * 4.0, 1.5, 10.0 + fastrand::f32() * 8.0)
+            },
+            ParticleType::Explosion => {
+                let speed = 5.0 + fastrand::f32() * 10.0;
+                (angle.cos() * speed, angle.sin() * speed, 0.8, 10.0 + fastrand::f32() * 10.0)
+            },
+            ParticleType::Spark => {
+                let speed = 10.0 + fastrand::f32() * 15.0;
+                (angle.cos() * speed, angle.sin() * speed, 0.4, 3.0 + fastrand::f32() * 3.0)
+            },
+            ParticleType::Snowflake => {
+                let speed = 0.5 + fastrand::f32() * 1.5;
+                (angle.cos() * speed, 1.0 + fastrand::f32(), 3.0, 3.0 + fastrand::f32() * 3.0)
+            },
+            ParticleType::Heart => {
+                (0.0, -2.0, 2.0, 20.0)
             }
         };
 
@@ -101,6 +120,23 @@ impl Particle {
             ParticleType::GooChunk => {
                 self.vy += 10.0 * get_frame_time(); // Moderate gravity
                 self.vx *= 0.95; // Friction
+            },
+            ParticleType::Explosion => {
+                self.vx *= 0.9; // Drag
+                self.vy *= 0.9;
+                self.size *= 0.95;
+            },
+            ParticleType::Spark => {
+                 self.vx *= 0.8;
+                 self.vy *= 0.8;
+            },
+            ParticleType::Snowflake => {
+                self.x += (get_time() * 2.0 + self.y as f64 * 0.05).sin() as f32 * 0.5; // Sway
+                self.vy = 1.0; // Constant slow fall
+            },
+            ParticleType::Heart => {
+                self.vy = -1.0; // Float up
+                self.size = (get_time() * 5.0).sin() as f32 * 2.0 + 20.0; // Pulse
             }
         }
         
@@ -122,9 +158,17 @@ impl Particle {
                 // Shine
                 draw_circle(px - self.size * 0.3, py - self.size * 0.3, self.size * 0.2, Color::new(1.0, 1.0, 1.0, alpha));
             },
+            ParticleType::Heart => {
+                 draw_text("💖", px - self.size/2.0, py, self.size, WHITE);
+            },
+            ParticleType::Snowflake => {
+                 draw_text("❄", px - self.size/2.0, py, self.size, col);
+            },
+            ParticleType::Spark => {
+                draw_line(px, py, px - self.vx*0.2, py - self.vy*0.2, 2.0, col);
+            },
             _ => {
-               // Use jelly block logic? Or just simple shapes for performance/clarity?
-               // Let's use simple shapes but "gooey"
+               // Explosion, Droplet, Goo, etc use circles
                draw_circle(px, py, self.size, col);
             }
         }
