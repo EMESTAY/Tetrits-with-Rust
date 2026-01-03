@@ -279,19 +279,30 @@ pub fn draw_bonus_selection(game: &Game) {
         );
     }
 
-    // Draw 3 Cards
+    // Grid Layout Constants
     let card_w = 250.0;
     let card_h = 350.0;
     let gap = 30.0;
-    let total_w = 3.0 * card_w + 2.0 * gap;
-    let start_x = (screen_w - total_w) / 2.0;
-    let start_y = (screen_h - card_h) / 2.0;
+    let grid_cols = 3;
     let font_ref = game.font.as_ref();
     let time = get_time();
+    
+    // Calculate Grid Dimensions
+    let total_bonuses = game.bonus_options.len();
+    let total_rows = (total_bonuses + grid_cols - 1) / grid_cols;
+    
+    let grid_w = (grid_cols as f32).min(total_bonuses as f32) * card_w + ((grid_cols as f32).min(total_bonuses as f32) - 1.0).max(0.0) * gap;
+    let grid_h = (total_rows as f32) * card_h + ((total_rows as f32) - 1.0).max(0.0) * gap;
+
+    let start_x = (screen_w - grid_w) / 2.0;
+    let start_y = (screen_h - grid_h) / 2.0 + 50.0; // Offset for title
 
     for (i, bonus) in game.bonus_options.iter().enumerate() {
         let is_selected = i == game.bonus_selection_idx;
         
+        let col = i % grid_cols;
+        let row = i / grid_cols;
+
         // Hover/Selection effect
         let scale = if is_selected { 
             1.05 + (time * 5.0).sin() as f32 * 0.02 
@@ -302,8 +313,13 @@ pub fn draw_bonus_selection(game: &Game) {
         let cw = card_w * scale;
         let ch = card_h * scale;
         
-        let x = start_x + i as f32 * (card_w + gap) - (cw - card_w)/2.0;
-        let y = start_y - (ch - card_h)/2.0;
+        // Position Card in Grid
+        let base_x = start_x + col as f32 * (card_w + gap);
+        let base_y = start_y + row as f32 * (card_h + gap);
+        
+        // Center scaled card on its slot
+        let x = base_x - (cw - card_w) / 2.0;
+        let y = base_y - (ch - card_h) / 2.0;
 
         // Card Background
         let card_color = if is_selected {

@@ -182,7 +182,7 @@ impl Game {
                 }
             }
             GameState::ChooseBonus => {
-                 if is_key_pressed(KeyCode::Right) {
+                if is_key_pressed(KeyCode::Right) {
                     self.bonus_selection_idx = (self.bonus_selection_idx + 1) % self.bonus_options.len();
                     self.audio.play_hold();
                 }
@@ -193,6 +193,20 @@ impl Game {
                         self.bonus_selection_idx -= 1;
                     }
                     self.audio.play_hold();
+                }
+                // Grid Navigation (3 columns)
+                if is_key_pressed(KeyCode::Down) {
+                    let next = self.bonus_selection_idx + 3;
+                    if next < self.bonus_options.len() {
+                        self.bonus_selection_idx = next;
+                        self.audio.play_hold();
+                    }
+                }
+                if is_key_pressed(KeyCode::Up) {
+                    if self.bonus_selection_idx >= 3 {
+                        self.bonus_selection_idx -= 3;
+                        self.audio.play_hold();
+                    }
                 }
                 if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::Space) {
                     // Activate Bonus
@@ -393,11 +407,16 @@ impl Game {
         }
 
 
-        // --- DEV MODE: Click Score to Unlock All Bonuses ---
+        // --- DEV MODE: Click "Sun" (Top Left Background) to Unlock All Bonuses ---
         if is_mouse_button_pressed(MouseButton::Left) {
              let (mx, my) = mouse_position();
-             // Score area rough estimation (Top Left)
-             if mx < 300.0 && my < 150.0 {
+             // Target the actual Sun in the background
+             let sun_pos = self.background.sun_pos;
+             let dx = mx - sun_pos.x;
+             let dy = my - sun_pos.y;
+             
+             // Radius 80 (Sun is 50 + glow)
+             if dx*dx + dy*dy < 80.0 * 80.0 {
                  self.state = GameState::ChooseBonus;
                  self.bonus_options = crate::bonuses::Bonus::get_all(); // DEBUG: Show ALL bonuses
                  self.bonus_selection_idx = 0;
@@ -822,7 +841,7 @@ impl Game {
         if bonus.kind == BonusType::LiquidFiller {
              // Force next piece to be JELLY
              let mut jelly = crate::bidule::Bidule::new(crate::bidule::BiduleType::Jelly);
-             jelly.pos.y = -2; // Start slightly higher?
+             jelly.pos.y = 2; // Spawn CLEARLY ON grid
              self.next_pieces[0] = jelly;
              
              self.audio.play_level_up();
@@ -833,7 +852,7 @@ impl Game {
         if bonus.kind == BonusType::Bomb {
              // Force next piece to be BOMB
              let mut bomb = crate::bidule::Bidule::new(crate::bidule::BiduleType::Bomb);
-             bomb.pos.y = -2;
+             bomb.pos.y = 2; // Spawn CLEARLY ON grid
              self.next_pieces[0] = bomb;
              
              self.audio.play_level_up();
