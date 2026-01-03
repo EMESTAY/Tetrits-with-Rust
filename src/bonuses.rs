@@ -6,7 +6,7 @@ pub enum BonusType {
     Bomb,
     Chill,
     VerticalLaser,
-    ScoreMultiplier,
+    LiquidFiller,
     Drill,
     
     // Relics (Passive / Permanent)
@@ -62,11 +62,11 @@ impl Bonus {
                 rarity: Rarity::Common,
             },
             Bonus {
-                kind: BonusType::ScoreMultiplier,
-                name: "DOUBLE SCORE",
-                description: "2x Score for the next level.",
-                icon: "💎",
-                color: PURPLE,
+                kind: BonusType::LiquidFiller,
+                name: "JELLY BIDULE",
+                description: "Drops 6 liquid blocks that fill the lowest gaps.",
+                icon: "🍮",
+                color: Color::new(0.0, 1.0, 1.0, 1.0), // Cyan/Aqua liquid
                 rarity: Rarity::Common,
             },
             Bonus {

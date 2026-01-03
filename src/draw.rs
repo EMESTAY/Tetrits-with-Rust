@@ -28,6 +28,30 @@ pub fn draw_preview_piece(x: f32, y: f32, w: f32, h: f32, piece: &Bidule) {
     let offset_x = x + w / 2.0 - piece_w / 2.0 - (min_x as f32 * bs);
     let offset_y = y + h / 2.0 - piece_h / 2.0 - (min_y as f32 * bs);
 
+    // --- SPECIAL PREVIEW: GIANT JELLY CIRCLE ---
+    if piece.kind == crate::bidule::BiduleType::Jelly {
+        let cx = x + w / 2.0;
+        let cy = y + h / 2.0;
+        // Calculate appropriate radius for the preview window
+        // The piece is roughly 3 blocks wide (90px). 
+        // We want it to fit nicely. 
+        // Window width is side_panel_w (260.0).
+        // Let's make it fairly big but contained.
+        let radius = 45.0; // 1.5 blocks radius = 3 blocks diameter
+        
+        draw_giant_jelly_circle(cx, cy, radius, piece.color, false);
+        return;
+    }
+
+    // --- SPECIAL PREVIEW: GIANT BOMB DIAMOND ---
+    if piece.kind == crate::bidule::BiduleType::Bomb {
+        let cx = x + w / 2.0;
+        let cy = y + h / 2.0;
+        let radius = 50.0; // Slightly larger for diamond points
+        draw_giant_bomb_diamond(cx, cy, radius, piece.color, false);
+        return;
+    }
+
     for p in positions.iter() {
         let bx = p.x;
         let by = p.y;
@@ -69,6 +93,145 @@ pub struct Connectivity {
     pub right: Option<Color>,
     pub bottom: Option<Color>,
     pub left: Option<Color>,
+}
+
+/// Draws a GIANT Jelly Circle with all the layered effects
+pub fn draw_giant_jelly_circle(
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    color: Color,
+    is_ghost: bool,
+) {
+     let padding = 1.0;
+     
+    // Ghost Logic
+    if is_ghost {
+         draw_circle_lines(cx, cy, radius, 3.0, Color::new(color.r, color.g, color.b, 0.3));
+        return;
+    }
+
+    // --- Enhanced Wobble Physics (Copied & Adapted) ---
+    let time = get_time();
+    let wobble_speed = 3.0;
+    
+    // Low frequency wobble for the giant mass
+    let wobble_x = ((time * wobble_speed).sin() + (time * wobble_speed * 1.5).sin() * 0.3) as f32 * 2.0;
+    let wobble_y = ((time * wobble_speed * 1.2).cos() + (time * wobble_speed * 2.0).cos() * 0.3) as f32 * 2.0;
+
+    // Apply dampened wobble to center position
+    let wx = cx + wobble_x;
+    let wy = cy + wobble_y;
+
+    // Breathing effect
+    let breathe = ((time * 2.5).sin() * 2.0) as f32;
+
+    // --- Layered Geometry Helper ---
+    let draw_layer = |inset: f32, color_transform: &dyn Fn(Color) -> Color| {
+        let current_radius = radius - padding - inset + breathe;
+        
+        // Safety check for negative radius
+        if current_radius <= 0.0 { return; }
+
+        let my_layer_color = color_transform(color);
+
+        draw_circle(wx, wy, current_radius, my_layer_color);
+    };
+
+    // --- 1. Rim Layer (Outer Glow) ---
+    draw_layer(0.0, &|c| {
+        Color::new(
+            f32::min(1.0, c.r + 0.2),
+            f32::min(1.0, c.g + 0.2),
+            f32::min(1.0, c.b + 0.2),
+            0.9,
+        )
+    });
+
+    // --- 2. Body Layer (Translucent Jelly) ---
+    draw_layer(4.0, &|c| Color::new(c.r, c.g, c.b, 0.75));
+
+    // --- 3. Inner Core (Denser Volume) ---
+    draw_layer(12.0, &|c| Color::new(c.r * 0.8, c.g * 0.8, c.b * 0.8, 0.95));
+
+    // --- 4. Glossy Highlights (Wetness) ---
+    let shine_color = Color::new(1.0, 1.0, 1.0, 0.5);
+    // Main big highlight
+    draw_circle(
+        wx - radius * 0.3,
+        wy - radius * 0.3,
+        radius * 0.25,
+        shine_color,
+    );
+    // Smaller secondary
+    draw_circle(
+        wx + radius * 0.4,
+        wy + radius * 0.4,
+        radius * 0.1,
+        Color::new(1.0, 1.0, 1.0, 0.8),
+    );
+}
+
+/// Draws a GIANT Bomb Diamond (Rotated Square) with Lava effects
+pub fn draw_giant_bomb_diamond(
+    cx: f32,
+    cy: f32,
+    radius: f32, // This is roughly half-width
+    color: Color,
+    is_ghost: bool,
+) {
+    // Ghost Logic
+    if is_ghost {
+        // Draw Diamond Outline
+        // (cx, cy-r), (cx+r, cy), (cx, cy+r), (cx-r, cy)
+        let top = Vec2::new(cx, cy - radius);
+        let right = Vec2::new(cx + radius, cy);
+        let bot = Vec2::new(cx, cy + radius);
+        let left = Vec2::new(cx - radius, cy);
+        
+        let c = Color::new(color.r, color.g, color.b, 0.3);
+        draw_line(top.x, top.y, right.x, right.y, 2.0, c);
+        draw_line(right.x, right.y, bot.x, bot.y, 2.0, c);
+        draw_line(bot.x, bot.y, left.x, left.y, 2.0, c);
+        draw_line(left.x, left.y, top.x, top.y, 2.0, c);
+        return;
+    }
+
+    let time = get_time();
+    
+    // Pulsing size
+    let pulse = (time * 8.0).sin() as f32 * 2.0;
+    let r = radius + pulse;
+
+    // Vertices
+    let top = Vec2::new(cx, cy - r);
+    let right = Vec2::new(cx + r, cy);
+    let bot = Vec2::new(cx, cy + r);
+    let left = Vec2::new(cx - r, cy);
+
+    // 1. Base Lava Layer (Orange/Red gradient simulated by layers?)
+    draw_triangle(top, right, bot, color);
+    draw_triangle(bot, left, top, color);
+
+    // 2. Inner Heat (Yellow/White center)
+    let inner_r = r * 0.6;
+    let i_top = Vec2::new(cx, cy - inner_r);
+    let i_right = Vec2::new(cx + inner_r, cy);
+    let i_bot = Vec2::new(cx, cy + inner_r);
+    let i_left = Vec2::new(cx - inner_r, cy);
+    
+    let heat_col = Color::new(1.0, 0.6, 0.0, 1.0); // Bright Orange
+    draw_triangle(i_top, i_right, i_bot, heat_col);
+    draw_triangle(i_bot, i_left, i_top, heat_col);
+
+    // 3. Cracks / Dark Spots (Noise)
+    // Simple dark jagged lines or patches
+    let dark_col = Color::new(0.4, 0.1, 0.0, 0.6);
+    draw_circle(cx + r*0.3, cy - r*0.2, r*0.15, dark_col);
+    draw_circle(cx - r*0.2, cy + r*0.3, r*0.1, dark_col);
+    
+    // 4. White Hot Core
+    draw_circle(cx, cy, r * 0.2, Color::new(1.0, 1.0, 0.8, 1.0));
 }
 
 /// Draws an individual "Jelly" block with connected textures
@@ -130,17 +293,60 @@ pub fn draw_jelly_block(
         let cx = wx + padding + inset - breathe * 0.5;
         let cy = wy + padding + inset - breathe * 0.5;
 
-        // Base rounded rect (The "Node") - Always our color
         let my_layer_color = color_transform(color);
 
-        draw_rounded_rect(
-            cx,
-            cy,
-            current_size,
-            current_size,
-            current_r,
-            my_layer_color,
-        );
+        // --- DYNAMIC SHAPE RENDERING ---
+        // Active Jelly Check: Pink (#fb6f92)
+        // RGB: (251/255, 111/255, 146/255) -> (0.984, 0.435, 0.573) approximately
+        // Using strict equality on floats from from_hex might be unsafe, but let's try matching the BiduleType in caller?
+        // Actually, we moved the active circle logic OUT of here.
+        // This block is only for standard blocks (grid) and the ghost if not overridden.
+        // Wait, line 230 comments say "Active Jelly is now handled by draw_giant_jelly_circle upstream".
+        // SO... we only need to worry about the fallback or GRID blocks.
+        // Standard grid blocks for Jelly ARE rounded rects. So this is fine.
+        
+        // WHAT WE NEED TO ADD HERE IS BOMB (LAVA) RENDERING!
+        
+        // Bomb Check: Orange (#f35b04)
+        // RGB: (243/255, 91/255, 4/255) -> (0.953, 0.357, 0.016)
+        let is_bomb = color.r > 0.9 && color.g < 0.4 && color.b < 0.1;
+        
+        if is_bomb {
+            // --- LAVA BLOCK RENDERING ---
+            let time = get_time();
+            
+            // Pulsing Red/Orange base
+            let pulse = (time * 5.0).sin() * 0.1;
+            let lava_col = Color::new(
+                color.r, 
+                color.g + pulse as f32, 
+                color.b, 
+                1.0
+            );
+            
+            draw_rectangle(cx, cy, current_size, current_size, lava_col);
+            
+            // "Cracks" or Heat spots (Yellow/White)
+            let spots = bubble_seed; // Recycle seed
+            if spots % 3 == 0 {
+                 draw_circle(cx + current_size*0.3, cy + current_size*0.3, current_size*0.2, YELLOW);
+            }
+            if spots % 5 == 0 {
+                 draw_circle(cx + current_size*0.7, cy + current_size*0.6, current_size*0.15, RED);
+            }
+            
+        } else {
+            // Standard Rounded Rect for all block-based rendering
+            // (Active Jelly is now handled by draw_giant_jelly_circle upstream)
+            draw_rounded_rect(
+                cx,
+                cy,
+                current_size,
+                current_size,
+                current_r,
+                my_layer_color,
+            );
+        }
 
         // --- TRAPPED BUBBLES (Organic/Aerated look) ---
         if bubble_seed != 0 {
@@ -343,7 +549,7 @@ fn draw_play_scene(game: &Game) {
 
     let grid_y = offset_y;
     let stats_y = grid_y;
-
+    
     let font_ref = game.font.as_ref();
 
     // --- 1. Level Panel (Top Left) ---
@@ -370,6 +576,14 @@ fn draw_play_scene(game: &Game) {
         let tx = next_x + (side_panel_w - dim.width * pulse_scale) / 2.0;
         let ty = stats_y + 70.0;
         
+        // Shadow
+        draw_text_ex(&lvl_text, tx + 2.0, ty + 2.0, TextParams {
+            font: Some(f),
+            font_size: (60.0 * pulse_scale) as u16,
+            color: COLOR_TEXT_SHADOW,
+            ..Default::default()
+        });
+        // Text
         draw_text_ex(&lvl_text, tx, ty, TextParams {
             font: Some(f),
             font_size: (60.0 * pulse_scale) as u16,
@@ -436,6 +650,14 @@ fn draw_play_scene(game: &Game) {
         let dim = measure_text(&score_text, Some(f), 50, 1.0);
         let tx = hold_x + (side_panel_w - dim.width * pulse_scale) / 2.0;
         
+        // Shadow
+        draw_text_ex(&score_text, tx + 2.0, score_panel_y + 80.0 + 2.0, TextParams {
+            font: Some(f),
+            font_size: (50.0 * pulse_scale) as u16,
+            color: COLOR_TEXT_SHADOW,
+            ..Default::default()
+        });
+        // Text
         draw_text_ex(&score_text, tx, score_panel_y + 80.0, TextParams {
             font: Some(f),
             font_size: (50.0 * pulse_scale) as u16,
@@ -521,7 +743,7 @@ fn draw_play_scene(game: &Game) {
         grid_border_color,
     );
 
-    // Grid Lines
+    // Grid Lines (Scaled)
     for x in 1..GRID_WIDTH {
         draw_line(
             grid_x + x as f32 * BLOCK_SIZE,
@@ -576,7 +798,7 @@ fn draw_play_scene(game: &Game) {
 
     // Helper to get connectivity for active piece
     let get_piece_conn = |pos: crate::bidule::Point,
-                          all: &[crate::bidule::Point; 4],
+                          all: &[crate::bidule::Point],
                           my_color: Color|
      -> Connectivity {
         let mut conn = Connectivity {
@@ -603,41 +825,151 @@ fn draw_play_scene(game: &Game) {
     };
 
     // Draw Ghost Piece
-    let ghost = game.get_ghost_position(); // We might need to make get_ghost_position pub
-    for p in game.current_piece.positions.iter() {
-        let x = ghost.x + p.x;
-        let y = ghost.y + p.y;
-        if y >= 0 {
-            let neighbors =
-                get_piece_conn(*p, &game.current_piece.positions, game.current_piece.color);
-            draw_jelly_block(
-                grid_x + x as f32 * BLOCK_SIZE,
-                grid_y + y as f32 * BLOCK_SIZE,
-                BLOCK_SIZE,
-                game.current_piece.color,
-                neighbors,
-                true,
-                0,
-            );
+    let ghost = game.get_ghost_position();
+    if game.current_piece.kind == crate::bidule::BiduleType::Jelly {
+         // Ghost Circle
+         let mut min_x = f32::MAX;
+         let mut max_x = f32::MIN;
+         let mut min_y = f32::MAX;
+         let mut max_y = f32::MIN;
+         
+         for p in &game.current_piece.positions {
+             let x = (ghost.x + p.x) as f32 * BLOCK_SIZE;
+             let y = (ghost.y + p.y) as f32 * BLOCK_SIZE;
+             if x < min_x { min_x = x; }
+             if x + BLOCK_SIZE > max_x { max_x = x + BLOCK_SIZE; }
+             if y < min_y { min_y = y; }
+             if y + BLOCK_SIZE > max_y { max_y = y + BLOCK_SIZE; }
+         }
+         
+         let cx = grid_x + (min_x + max_x) / 2.0;
+         let cy = grid_y + (min_y + max_y) / 2.0;
+         let radius = (max_x - min_x).max(max_y - min_y) / 2.0;
+         
+         let col = game.current_piece.color;
+         // Draw layered ghost
+         draw_giant_jelly_circle(cx, cy, radius, col, true);
+         
+    } else if game.current_piece.kind == crate::bidule::BiduleType::Bomb {
+        // Ghost for Bomb: DIAMOND OUTLINE
+        // Calculate bounds similar to Jelly
+         let mut min_x = f32::MAX;
+         let mut max_x = f32::MIN;
+         let mut min_y = f32::MAX;
+         let mut max_y = f32::MIN;
+         
+         for p in &game.current_piece.positions {
+             let x = (ghost.x + p.x) as f32 * BLOCK_SIZE;
+             let y = (ghost.y + p.y) as f32 * BLOCK_SIZE;
+             if x < min_x { min_x = x; }
+             if x + BLOCK_SIZE > max_x { max_x = x + BLOCK_SIZE; }
+             if y < min_y { min_y = y; }
+             if y + BLOCK_SIZE > max_y { max_y = y + BLOCK_SIZE; }
+         }
+         
+         let cx = grid_x + (min_x + max_x) / 2.0;
+         let cy = grid_y + (min_y + max_y) / 2.0;
+         // Radius covers the 3x3 area roughly
+         // 3 blocks = 90px. Radius ~ 45.0 + padding?
+         // Diamond tip to tip should be roughly 1.5 blocks? ~45.0 radius
+         let radius = 55.0; 
+         
+         draw_giant_bomb_diamond(cx, cy, radius, game.current_piece.color, true);
+         
+    } else {
+        for p in game.current_piece.positions.iter() {
+            let x = ghost.x + p.x;
+            let y = ghost.y + p.y;
+            if y >= 0 {
+                let neighbors =
+                    get_piece_conn(*p, &game.current_piece.positions, game.current_piece.color);
+                draw_jelly_block(
+                    grid_x + x as f32 * BLOCK_SIZE,
+                    grid_y + y as f32 * BLOCK_SIZE,
+                    BLOCK_SIZE,
+                    game.current_piece.color,
+                    neighbors,
+                    true,
+                    0,
+                );
+            }
         }
     }
 
     // Draw Current Piece
-    for (i, p) in game.current_piece.positions.iter().enumerate() {
-        let x = game.current_piece.pos.x + p.x;
-        let y = game.current_piece.pos.y + p.y;
-        if y >= 0 {
-            let neighbors =
-                get_piece_conn(*p, &game.current_piece.positions, game.current_piece.color);
-            draw_jelly_block(
-                grid_x + x as f32 * BLOCK_SIZE,
-                grid_y + y as f32 * BLOCK_SIZE,
-                BLOCK_SIZE,
-                game.current_piece.color,
-                neighbors,
-                false,
-                game.current_piece.seeds[i],
-            );
+    if game.current_piece.kind == crate::bidule::BiduleType::Jelly {
+         // --- SPECIAL RENDERING: BIG SUN-LIKE CIRCLE ---
+         
+         // Calculate center of mass in pixels
+         let mut min_x = f32::MAX;
+         let mut max_x = f32::MIN;
+         let mut min_y = f32::MAX;
+         let mut max_y = f32::MIN;
+         
+         for p in &game.current_piece.positions {
+             let x = (game.current_piece.pos.x + p.x) as f32 * BLOCK_SIZE;
+             let y = (game.current_piece.pos.y + p.y) as f32 * BLOCK_SIZE;
+             if x < min_x { min_x = x; }
+             if x + BLOCK_SIZE > max_x { max_x = x + BLOCK_SIZE; }
+             if y < min_y { min_y = y; }
+             if y + BLOCK_SIZE > max_y { max_y = y + BLOCK_SIZE; }
+         }
+         
+         let cx = grid_x + (min_x + max_x) / 2.0;
+         let cy = grid_y + (min_y + max_y) / 2.0;
+         let radius = (max_x - min_x).max(max_y - min_y) / 2.0;
+         
+         // Use the NEW Helper with full effect
+         draw_giant_jelly_circle(cx, cy, radius, game.current_piece.color, false);
+         
+    } else if game.current_piece.kind == crate::bidule::BiduleType::Bomb {
+         // --- SPECIAL RENDERING: GIANT BOMB DIAMOND ---
+         
+          let mut min_x = f32::MAX;
+          let mut max_x = f32::MIN;
+          let mut min_y = f32::MAX;
+          let mut max_y = f32::MIN;
+          
+          for p in &game.current_piece.positions {
+              let x = (game.current_piece.pos.x + p.x) as f32 * BLOCK_SIZE;
+              let y = (game.current_piece.pos.y + p.y) as f32 * BLOCK_SIZE;
+              if x < min_x { min_x = x; }
+              if x + BLOCK_SIZE > max_x { max_x = x + BLOCK_SIZE; }
+              if y < min_y { min_y = y; }
+              if y + BLOCK_SIZE > max_y { max_y = y + BLOCK_SIZE; }
+          }
+          
+          let cx = grid_x + (min_x + max_x) / 2.0;
+          let cy = grid_y + (min_y + max_y) / 2.0;
+          let radius = 55.0; // Tuning size
+          
+          draw_giant_bomb_diamond(cx, cy, radius, game.current_piece.color, false);
+         
+    } else {
+        // Standard Rendering for other pieces
+        for (i, p) in game.current_piece.positions.iter().enumerate() {
+            let x = game.current_piece.pos.x + p.x;
+            let y = game.current_piece.pos.y + p.y;
+            if y >= 0 {
+                let neighbors =
+                    get_piece_conn(*p, &game.current_piece.positions, game.current_piece.color);
+                
+                // "Lock Shake": Jitter if lock timer active
+                let mut jitter_x = 0.0;
+                if game.lock_timer > 0.0 {
+                     jitter_x = (get_time() * 50.0).sin() as f32 * 2.0;
+                }
+    
+                draw_jelly_block(
+                    grid_x + x as f32 * BLOCK_SIZE + jitter_x,
+                    grid_y + y as f32 * BLOCK_SIZE,
+                    BLOCK_SIZE,
+                    game.current_piece.color,
+                    neighbors,
+                    false,
+                    game.current_piece.seeds[i],
+                );
+            }
         }
     }
 

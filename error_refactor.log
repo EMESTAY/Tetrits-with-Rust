@@ -1,0 +1,9 @@
+    Checking rust_tetris v0.1.0 (C:\Users\flore\Desktop\rustTetris)
+error[E0433]: failed to resolve: could not find `special_bidule` in the crate root
+  --> src\bidule.rs:37:62
+   |
+37 |         let (positions, color) = if let Some(props) = crate::special_bidule::get_special_bidule_properties(kind) {
+   |                                                              ^^^^^^^^^^^^^^ could not find `special_bidule` in the crate root
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `rust_tetris` (bin "rust_tetris") due to 1 previous error

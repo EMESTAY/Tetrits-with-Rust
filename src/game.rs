@@ -43,6 +43,14 @@ pub struct Game {
     pub bonus_options: Vec<Bonus>,
     pub bonus_selection_idx: usize,
     pub active_bonuses: Vec<ActiveBonus>,
+
+    // Dynamics (DAS/ARR/Lock Delay)
+    pub das_timer: f64,
+    pub das_direction: Option<i32>, // -1 Left, 1 Right
+    pub arr_timer: f64,
+    pub lock_timer: f64,
+    pub lock_resets: usize,
+    pub is_soft_dropping: bool,
 }
 
 impl Game {
@@ -73,6 +81,14 @@ impl Game {
             bonus_options: Vec::new(),
             bonus_selection_idx: 0,
             active_bonuses: Vec::new(),
+
+            // Dynamics
+            das_timer: 0.0,
+            das_direction: None,
+            arr_timer: 0.0,
+            lock_timer: 0.0,
+            lock_resets: 0,
+            is_soft_dropping: false,
         };
 
         game.fill_bag();
@@ -95,6 +111,12 @@ impl Game {
             BiduleType::J,
             BiduleType::L,
         ];
+        
+        // 20% chance to add a Plus piece to this bag
+        if fastrand::f32() < 0.20 {
+             types.push(BiduleType::Plus);
+        }
+
         fastrand::shuffle(&mut types);
         self.bag.extend(types);
     }
@@ -183,38 +205,61 @@ impl Game {
             }
             GameState::Playing => {
                 let time = get_time();
-
+                
                 self.handle_input();
 
-                let is_soft_drop = is_key_down(KeyCode::Down);
-                let speed = if is_soft_drop {
-                    0.05
+                // Gravity / Soft Drop
+                let mut speed;
+                let base_speed = (0.5 * (0.9f64.powi(self.level - 1))).max(0.05);
+                
+                if self.is_soft_dropping {
+                    speed = 0.05; // Fast drop
                 } else {
-                    // Level-based speed
-                    let base_speed = (0.5 * (0.9f64.powi(self.level - 1))).max(0.05);
-                    
-                    // CHILL Bonus: 50% slower
-                    let mut speed_mod = 1.0;
+                    speed = base_speed;
+                    // CHILL Bonus
                     if self.active_bonuses.iter().any(|b| b.kind == crate::bonuses::BonusType::Chill) {
-                        speed_mod *= 1.5;
+                        speed *= 1.5;
                     }
-                    
-                    // TIME ANCHOR: 10% slower per stack
+                    // TIME ANCHOR
                     let anchors = self.active_bonuses.iter().filter(|b| b.kind == crate::bonuses::BonusType::TimeAnchor).count();
                     if anchors > 0 {
-                        speed_mod *= 1.0 + (0.1 * anchors as f64);
+                        speed *= 1.0 + (0.1 * anchors as f64);
                     }
-                    
-                    base_speed * speed_mod
-                };
+                }
 
-                if time - self.last_fall_time > speed {
-                    self.current_piece.pos.y += 1;
-                    if self.grid.is_collision(&self.current_piece) {
-                        self.current_piece.pos.y -= 1;
+                // Check for lock delay condition (touching down)
+                // Temporarily move down to check
+                self.current_piece.pos.y += 1;
+                let is_touching_down = self.grid.is_collision(&self.current_piece);
+                self.current_piece.pos.y -= 1;
+
+                if is_touching_down {
+                    if self.lock_timer == 0.0 {
+                         self.lock_timer = time;
+                    }
+                    // Time limit on bottom
+                    if time - self.lock_timer > LOCK_DELAY {
                         self.lock_and_spawn();
                     }
-                    self.last_fall_time = time;
+                } else {
+                    self.lock_timer = 0.0;
+                    // Standard Gravity
+                     if time - self.last_fall_time > speed {
+                        self.current_piece.pos.y += 1;
+                        if self.grid.is_collision(&self.current_piece) {
+                             self.current_piece.pos.y -= 1;
+                             // Just landed, don't lock immediately. Wait for next frame/lock delay.
+                             // Reset fall timer to prevent double-move
+                             self.last_fall_time = time;
+                        } else {
+                            // Falling successfully
+                            self.last_fall_time = time;
+                            // Reset lock resets when falling? Standard tetris does.
+                            if self.lock_resets < MAX_LOCK_RESETS {
+                                self.lock_timer = 0.0; 
+                            }
+                        }
+                    }
                 }
             }
             GameState::GameOver => {
@@ -241,46 +286,73 @@ impl Game {
     }
 
     fn handle_input(&mut self) {
-        if is_key_pressed(KeyCode::Left) {
-            self.current_piece.pos.x -= 1;
-            if self.grid.is_collision(&self.current_piece) {
-                self.current_piece.pos.x += 1;
+        let dt = get_frame_time();
+
+        // --- DAS / ARR (Horizontal Movement) ---
+        let mut dir = 0;
+        if is_key_down(KeyCode::Left) { dir = -1; }
+        if is_key_down(KeyCode::Right) { dir = 1; } // Right takes priority if both pressed? Or cancel?
+
+        // Reset if direction changed or released
+        if self.das_direction != Some(dir) {
+            self.das_direction = Some(dir);
+            self.das_timer = 0.0;
+            self.arr_timer = 0.0;
+            
+            // Initial Move on press
+            if dir != 0 {
+                self.move_piece(dir, 0);
             }
-        }
-        if is_key_pressed(KeyCode::Right) {
-            self.current_piece.pos.x += 1;
-            if self.grid.is_collision(&self.current_piece) {
-                self.current_piece.pos.x -= 1;
-            }
+        } else if let Some(d) = self.das_direction {
+            // Holding same direction
+             if d != 0 {
+                self.das_timer += dt as f64;
+                if self.das_timer > DAS_DELAY {
+                    self.arr_timer += dt as f64;
+                    if self.arr_timer > ARR_DELAY {
+                        self.move_piece(d, 0);
+                        self.arr_timer = 0.0; // Reset for next zip
+                    }
+                }
+             }
         }
 
+        // --- Soft Drop ---
+        self.is_soft_dropping = is_key_down(KeyCode::Down);
+
+        // --- Rotation ---
         if is_key_pressed(KeyCode::Up) {
             let mut rotated = self.current_piece.clone();
             rotated.rotate();
             if !self.grid.is_collision(&rotated) {
                 self.current_piece = rotated;
+                self.on_move_reset_lock();
             } else {
                 // Wall kick (simple)
                 rotated.pos.x += 1;
                 if !self.grid.is_collision(&rotated) {
                     self.current_piece = rotated;
+                    self.on_move_reset_lock();
                 } else {
                     rotated.pos.x -= 2;
                     if !self.grid.is_collision(&rotated) {
                         self.current_piece = rotated;
+                        self.on_move_reset_lock();
                     }
                 }
             }
         }
 
+        // --- Hold ---
         if is_key_pressed(KeyCode::C) {
             if self.can_hold {
                 self.audio.play_hold();
                 if let Some(mut held) = self.hold_piece.clone() {
                     let mut current = self.current_piece.clone();
                     // Reset position
-                    current.pos = crate::bidule::Point { x: 3, y: 0 };
-                    held.pos = crate::bidule::Point { x: 3, y: 0 };
+                    let spawn_x = (GRID_WIDTH / 2) as i32 - 2;
+                    current.pos = crate::bidule::Point { x: spawn_x, y: 0 };
+                    held.pos = crate::bidule::Point { x: spawn_x, y: 0 };
 
                     self.hold_piece = Some(Bidule::new(current.kind)); // Reset orientation
                     self.current_piece = Bidule::new(held.kind);
@@ -294,26 +366,61 @@ impl Game {
                     self.next_pieces.push(p);
                 }
                 self.can_hold = false;
+                // Reset timers
+                self.lock_timer = 0.0;
+                self.lock_resets = 0;
             }
         }
 
+        // --- Hard Drop ---
         if is_key_pressed(KeyCode::Space) {
-            self.current_piece.pos = self.get_ghost_position();
+            let ghost = self.get_ghost_position();
+            let distance = ghost.y - self.current_piece.pos.y;
+            
+            // Slam effects
+            if distance > 0 {
+                // Reduced shake: Base 2.0 + 0.2 per block fallen
+                self.screen_shake = 2.0 + distance as f32 * 0.2; 
+                
+                // Slam Shockwave
+                let cx = (ghost.x as f32 * BLOCK_SIZE) + BLOCK_SIZE * 2.0;
+                let cy = (ghost.y as f32 * BLOCK_SIZE) + BLOCK_SIZE;
+                 self.particles.push(Particle::new(cx, cy, WHITE, ParticleType::Shockwave));
+            }
+            
+            self.current_piece.pos = ghost;
             self.lock_and_spawn();
         }
 
+
+        // --- DEV MODE: Click Score to Unlock All Bonuses ---
         if is_mouse_button_pressed(MouseButton::Left) {
-            let (mx, my) = mouse_position();
+             let (mx, my) = mouse_position();
+             // Score area rough estimation (Top Left)
+             if mx < 300.0 && my < 150.0 {
+                 self.state = GameState::ChooseBonus;
+                 self.bonus_options = crate::bonuses::Bonus::get_all(); // DEBUG: Show ALL bonuses
+                 self.bonus_selection_idx = 0;
+                 self.audio.play_level_up();
+             }
+        }
+    }
 
-            // Music Button Geometry (Bottom Left Icon)
-            let btn_size = 50.0;
-            let btn_x = 50.0;
-            let btn_y = screen_height() - 100.0;
+    fn move_piece(&mut self, dx: i32, _dy: i32) {
+        self.current_piece.pos.x += dx;
+        if self.grid.is_collision(&self.current_piece) {
+            self.current_piece.pos.x -= dx;
+        } else {
+            // Successful move
+            self.on_move_reset_lock();
+        }
+    }
 
-            if mx >= btn_x && mx <= btn_x + btn_size && my >= btn_y && my <= btn_y + btn_size {
-                self.is_music_playing = !self.is_music_playing;
-                self.audio.toggle_music(self.is_music_playing);
-            }
+    // Standard Tetris Rule: Moving/Rotating resets lock timer (up to limit)
+    fn on_move_reset_lock(&mut self) {
+        if self.lock_timer > 0.0 && self.lock_resets < MAX_LOCK_RESETS {
+            self.lock_timer = 0.0;
+            self.lock_resets += 1;
         }
     }
 
@@ -355,6 +462,74 @@ impl Game {
         self.audio.play_land(same_color, diff_color);
 
         self.grid.lock_piece(&self.current_piece);
+
+        // --- BOMB EXPLOSION LOGIC ---
+        if self.current_piece.kind == crate::bidule::BiduleType::Bomb {
+            // Explode 3x3 area around center of piece? 
+            // The user said "explodes on impact, clearing a 3x3 area".
+            // Since the piece itself is large (Diamond), maybe explode around its center?
+            // Diamond center is at pos + (1,1).
+            let cx = self.current_piece.pos.x + 1;
+            let cy = self.current_piece.pos.y + 1;
+            
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    let tx = cx + dx;
+                    let ty = cy + dy;
+                    if tx >= 0 && tx < GRID_WIDTH as i32 && ty >= 0 && ty < GRID_HEIGHT as i32 {
+                         self.grid.cells[ty as usize][tx as usize] = None;
+                         // Particle
+                         self.particles.push(Particle::new(
+                            (tx as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0,
+                            (ty as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0,
+                            ORANGE, // Lava colorish
+                            ParticleType::Explosion,
+                        ));
+                    }
+                }
+            }
+            self.screen_shake = 20.0;
+            self.audio.play_level_up(); // BOOM!
+        }
+
+        // --- SPECIAL PIECE MECHANICS (Jelly/Sand) ---
+        if self.current_piece.kind == crate::bidule::BiduleType::Jelly {
+             // Sand Physics: Iterate newly placed blocks and let them fall if empty space below
+             // Because we just fixed them, we know their positions. 
+             // We need to iteratively check if any blocks can fall.
+             
+             let mut settling = true;
+             let mut iterations = 0;
+             while settling && iterations < 20 { // Limit iterations to prevent freezing
+                 settling = false;
+                 iterations += 1;
+                 
+                 // Scan from bottom up, left to right
+                 for y in (0..GRID_HEIGHT-1).rev() { // Start from second to last row
+                     for x in 0..GRID_WIDTH {
+                         if self.grid.cells[y][x].is_some() {
+                             // Check if this specific cell is "Jelly" (color Pink)? 
+                             // Pink #fb6f92 -> (0.984, 0.435, 0.572, 1.0)
+                             let cell = self.grid.cells[y][x].unwrap();
+                             let is_jelly = cell.color.r > 0.9 && cell.color.g > 0.4 && cell.color.g < 0.5 && cell.color.b > 0.5; // Robust range check for Pink
+                             
+                             if is_jelly {
+                                 // Check directly below
+                                 if self.grid.cells[y+1][x].is_none() {
+                                     // Fall!
+                                     self.grid.cells[y+1][x] = self.grid.cells[y][x];
+                                     self.grid.cells[y][x] = None;
+                                     settling = true;
+                                 } 
+                                 // Optional: Side sliding? "Liquid" usually spreads.
+                                 // Check down-left or down-right if below is blocked?
+                                 // Let's stick to simple vertical gravity for "Sand" first as "fits all crevasses" implies filling holes.
+                             }
+                         }
+                     }
+                 }
+             }
+        }
 
         // --- ONE-TIME BONUSES (Bomb / Laser) ---
         let mut bonuses_to_remove = Vec::new();
@@ -595,10 +770,7 @@ impl Game {
             _ => 0,
         };
         
-        // Apply Score Multiplier
-        if self.active_bonuses.iter().any(|b| b.kind == crate::bonuses::BonusType::ScoreMultiplier) {
-             self.score *= 2; // Simple double
-        }
+
         
         // Apply Golden Pickaxe (+20% per stack)
         let pickaxes = self.active_bonuses.iter().filter(|b| b.kind == crate::bonuses::BonusType::GoldenPickaxe).count();
@@ -611,6 +783,11 @@ impl Game {
         let p = self.get_next_piece();
         self.next_pieces.push(p);
         self.can_hold = true;
+        
+        // Reset Logic for new piece
+        self.lock_timer = 0.0;
+        self.lock_resets = 0;
+        self.last_fall_time = get_time(); // Give full beat before drop
 
         if self.grid.is_collision(&self.current_piece) {
              // Life Insurance Check
@@ -632,12 +809,37 @@ impl Game {
         // Some bonuses might have immediate effects, others are stored
         let duration = match bonus.kind {
             BonusType::Chill => 60.0, // 60 seconds
-            BonusType::ScoreMultiplier => 60.0, // Lasts for 60s
+            BonusType::LiquidFiller => 0.0, // Instant
+
             // Relics are Infinite
             BonusType::TimeAnchor | BonusType::GoldenPickaxe | BonusType::VolatileGrid | BonusType::LifeInsurance => 999999.0,
             // Others are "One Time Use" on next lock
             _ => 9999.0, // Until used
         };
+
+        // --- INSTANT EFFECT BONUSES ---
+        // --- INSTANT/SPAWN EFFECT BONUSES ---
+        if bonus.kind == BonusType::LiquidFiller {
+             // Force next piece to be JELLY
+             let mut jelly = crate::bidule::Bidule::new(crate::bidule::BiduleType::Jelly);
+             jelly.pos.y = -2; // Start slightly higher?
+             self.next_pieces[0] = jelly;
+             
+             self.audio.play_level_up();
+             return; // Don't add to active bonuses
+        }
+
+        // --- INSTANT EFFECT: BOMB BIDULE ---
+        if bonus.kind == BonusType::Bomb {
+             // Force next piece to be BOMB
+             let mut bomb = crate::bidule::Bidule::new(crate::bidule::BiduleType::Bomb);
+             bomb.pos.y = -2;
+             self.next_pieces[0] = bomb;
+             
+             self.audio.play_level_up();
+             return;
+        }
+
 
         self.active_bonuses.push(ActiveBonus {
             kind: bonus.kind,
@@ -661,6 +863,7 @@ impl Game {
                  BonusType::LifeInsurance => ParticleType::Heart,
                  BonusType::Bomb | BonusType::VolatileGrid => ParticleType::Explosion,
                  BonusType::VerticalLaser => ParticleType::Spark,
+                 BonusType::LiquidFiller => ParticleType::GooChunk,
                  _ => ParticleType::Bubble,
              };
              self.particles.push(Particle::new(

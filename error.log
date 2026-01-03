@@ -1,0 +1,14 @@
+    Checking rust_tetris v0.1.0 (C:\Users\flore\Desktop\rustTetris)
+error: unexpected closing delimiter: `}`
+   --> src\game.rs:891:1
+    |
+809 |     pub fn activate_bonus(&mut self, bonus: Bonus) {
+    |                                                    - this delimiter might not be properly closed...
+...
+856 |         }
+    |         - ...as it matches this but it has different indentation
+...
+891 | }
+    | ^ unexpected closing delimiter
+
+error: could not compile `rust_tetris` (bin "rust_tetris") due to 1 previous error

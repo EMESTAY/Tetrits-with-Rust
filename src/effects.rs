@@ -1,6 +1,7 @@
 // use crate::draw; removed
 use macroquad::prelude::*;
 
+
 pub struct ComicEffect {
     pub text: String,
     pub x: f32,
@@ -39,6 +40,7 @@ pub enum ParticleType {
     Spark,    // Very fast, short life
     Snowflake,// Slow fall, sway
     Heart,    // Floats up slowly
+    Shockwave,// Expanding ring
 }
 
 pub struct Particle {
@@ -86,6 +88,9 @@ impl Particle {
             },
             ParticleType::Heart => {
                 (0.0, -2.0, 2.0, 20.0)
+            },
+            ParticleType::Shockwave => {
+                (0.0, 0.0, 0.5, 10.0) // Short life, starts small
             }
         };
 
@@ -137,6 +142,10 @@ impl Particle {
             ParticleType::Heart => {
                 self.vy = -1.0; // Float up
                 self.size = (get_time() * 5.0).sin() as f32 * 2.0 + 20.0; // Pulse
+            },
+            ParticleType::Shockwave => {
+                self.size += 50.0 * get_frame_time(); // Expand fast
+                self.life -= get_frame_time() * 2.0; // Die faster
             }
         }
         
@@ -166,6 +175,9 @@ impl Particle {
             },
             ParticleType::Spark => {
                 draw_line(px, py, px - self.vx*0.2, py - self.vy*0.2, 2.0, col);
+            },
+            ParticleType::Shockwave => {
+                draw_circle_lines(px, py, self.size, 3.0 * alpha, col);
             },
             _ => {
                // Explosion, Droplet, Goo, etc use circles
