@@ -2,6 +2,7 @@ use macroquad::audio::{load_sound, play_sound, PlaySoundParams, Sound};
 
 pub struct AudioSystem {
     sfx_tetris: Sound,
+    sfx_anvil: Sound,
     sfx_hold: Sound,
     sfx_same: Sound,
     sfx_diff: Sound,
@@ -19,13 +20,16 @@ impl AudioSystem {
         let sfx_diff = load_sound("src/assets/SE/notSameColor.wav")
             .await
             .expect("Failed to load notSameColor.wav");
+        let sfx_anvil = load_sound("src/assets/SE/anvill.wav")
+            .await
+            .expect("Failed to load anvill.wav");
 
         // Load once, clone for both uses
         let music_sound = load_sound("src/assets/SE/always.ogg")
             .await
             .expect("Failed to load always.ogg");
 
-        let sfx_tetris = music_sound.clone();
+        let sfx_tetris = sfx_same.clone(); // Reuse same color sound for now, NOT the music!
         let bgm = music_sound;
 
         play_sound(
@@ -38,6 +42,7 @@ impl AudioSystem {
 
         Self {
             sfx_tetris,
+            sfx_anvil,
             sfx_hold,
             sfx_same,
             sfx_diff,
@@ -118,6 +123,16 @@ impl AudioSystem {
             },
         );
     }
+
+    pub fn play_anvil(&self) {
+        play_sound(
+            &self.sfx_anvil,
+            PlaySoundParams {
+                looped: false,
+                volume: 1.0,
+            },
+        );
+    }
 }
 
 // Implement Clone to allow Game restart logic (Sound is a handle, so cheap clone)
@@ -125,6 +140,7 @@ impl Clone for AudioSystem {
     fn clone(&self) -> Self {
         Self {
             sfx_tetris: self.sfx_tetris.clone(),
+            sfx_anvil: self.sfx_anvil.clone(),
 
             sfx_hold: self.sfx_hold.clone(),
             sfx_same: self.sfx_same.clone(),
