@@ -13,6 +13,9 @@ pub enum BiduleType {
     Plus,
     Jelly,
     Bomb,
+    Laser,
+    Drill,
+    Anvil,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -78,6 +81,7 @@ impl Bidule {
                     COLOR_PLUS,
                 ),
                 // Should be covered by special_bidule, but exhaustiveness check might need this or default
+
                 _ => (vec![], WHITE), 
             }
         };

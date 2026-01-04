@@ -43,7 +43,7 @@ async fn main() {
         clear_background(BLACK);
 
         game.update();
-        draw::draw_game(&game);
+        ui::draw_game(&game);
 
         next_frame().await
     }

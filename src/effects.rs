@@ -32,8 +32,9 @@ impl ComicEffect {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ParticleType {
-    Droplet,  // Fails down, bounces
+    Droplet,  // falls down, bounces
     Bubble,   // Floats up, wobbles
     GooChunk, // Heavy, sticky
     Explosion, // Fast radial burst
@@ -43,25 +44,10 @@ pub enum ParticleType {
     Shockwave,// Expanding ring
 }
 
-pub struct Particle {
-    pub x: f32,
-    pub y: f32,
-    pub vx: f32,
-    pub vy: f32,
-    pub color: Color,
-    pub life: f32,
-    pub max_life: f32,
-    pub size: f32,
-    pub rotation: f32,
-    pub angular_velocity: f32,
-    pub kind: ParticleType,
-}
-
-impl Particle {
-    pub fn new(x: f32, y: f32, color: Color, kind: ParticleType) -> Self {
-        let angle = fastrand::f32() * std::f32::consts::PI * 2.0;
-        
-        let (vx, vy, life, size) = match kind {
+impl ParticleType {
+    /// Returns initial (vx, vy, life, size)
+    pub fn init(&self, angle: f32) -> (f32, f32, f32, f32) {
+        match self {
             ParticleType::Droplet => {
                 let speed = 2.0 + fastrand::f32() * 6.0;
                 (angle.cos() * speed, -2.0 - fastrand::f32() * 5.0, 1.0, 5.0 + fastrand::f32() * 5.0)
@@ -92,7 +78,96 @@ impl Particle {
             ParticleType::Shockwave => {
                 (0.0, 0.0, 0.5, 10.0) // Short life, starts small
             }
-        };
+        }
+    }
+
+    pub fn update_motion(&self, p: &mut Particle, dt: f32) {
+        match self {
+            ParticleType::Droplet => {
+                p.vy += 20.0 * dt; // Heavy gravity
+            },
+            ParticleType::Bubble => {
+                p.vy -= 5.0 * dt; // Buoyancy (floats up)
+                p.x += (get_time() * 5.0 + p.y as f64 * 0.1).sin() as f32 * 0.1; // Wobble
+            },
+            ParticleType::GooChunk => {
+                p.vy += 10.0 * dt; // Moderate gravity
+                p.vx *= 0.95; // Friction
+            },
+            ParticleType::Explosion => {
+                p.vx *= 0.9; // Drag
+                p.vy *= 0.9;
+                p.size *= 0.95;
+            },
+            ParticleType::Spark => {
+                 p.vx *= 0.8;
+                 p.vy *= 0.8;
+            },
+            ParticleType::Snowflake => {
+                p.x += (get_time() * 2.0 + p.y as f64 * 0.05).sin() as f32 * 0.5; // Sway
+                p.vy = 1.0; // Constant slow fall
+            },
+            ParticleType::Heart => {
+                p.vy = -1.0; // Float up
+                p.size = (get_time() * 5.0).sin() as f32 * 2.0 + 20.0; // Pulse
+            },
+            ParticleType::Shockwave => {
+                p.size += 50.0 * dt; // Expand fast
+                p.life -= dt * 2.0; // Die faster
+            }
+        }
+    }
+
+    pub fn draw_style(&self, p: &Particle, px: f32, py: f32, col: Color) {
+        match self {
+            ParticleType::Bubble => {
+                // Outline circle
+                draw_circle_lines(px, py, p.size, 1.0, col);
+                // Shine
+                let alpha = (p.life / p.max_life).min(1.0);
+                draw_circle(px - p.size * 0.3, py - p.size * 0.3, p.size * 0.2, Color::new(1.0, 1.0, 1.0, alpha));
+            },
+            ParticleType::Heart => {
+                 draw_text("💖", px - p.size/2.0, py, p.size, WHITE);
+            },
+            ParticleType::Snowflake => {
+                 draw_text("❄", px - p.size/2.0, py, p.size, col);
+            },
+            ParticleType::Spark => {
+                draw_line(px, py, px - p.vx*0.2, py - p.vy*0.2, 2.0, col);
+            },
+            ParticleType::Shockwave => {
+                let alpha = (p.life / p.max_life).min(1.0);
+                draw_circle_lines(px, py, p.size, 3.0 * alpha, col);
+            },
+            _ => {
+               // Explosion, Droplet, Goo, etc use circles
+               draw_circle(px, py, p.size, col);
+            }
+        }
+    }
+}
+
+pub struct Particle {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub color: Color,
+    pub life: f32,
+    pub max_life: f32,
+    pub size: f32,
+    pub rotation: f32,
+    pub angular_velocity: f32,
+    pub kind: ParticleType,
+}
+
+impl Particle {
+    pub fn new(x: f32, y: f32, color: Color, kind: ParticleType) -> Self {
+        let angle = fastrand::f32() * std::f32::consts::PI * 2.0;
+        
+        // kind is Copy now
+        let (vx, vy, life, size) = kind.init(angle);
 
         Self {
             x,
@@ -110,46 +185,15 @@ impl Particle {
     }
 
     pub fn update(&mut self) -> bool {
-        self.life -= get_frame_time();
+        let dt = get_frame_time();
+        self.life -= dt;
         self.x += self.vx;
         self.y += self.vy;
         
-        match self.kind {
-            ParticleType::Droplet => {
-                self.vy += 20.0 * get_frame_time(); // Heavy gravity
-            },
-            ParticleType::Bubble => {
-                self.vy -= 5.0 * get_frame_time(); // Buoyancy (floats up)
-                self.x += (get_time() * 5.0 + self.y as f64 * 0.1).sin() as f32 * 0.1; // Wobble
-            },
-            ParticleType::GooChunk => {
-                self.vy += 10.0 * get_frame_time(); // Moderate gravity
-                self.vx *= 0.95; // Friction
-            },
-            ParticleType::Explosion => {
-                self.vx *= 0.9; // Drag
-                self.vy *= 0.9;
-                self.size *= 0.95;
-            },
-            ParticleType::Spark => {
-                 self.vx *= 0.8;
-                 self.vy *= 0.8;
-            },
-            ParticleType::Snowflake => {
-                self.x += (get_time() * 2.0 + self.y as f64 * 0.05).sin() as f32 * 0.5; // Sway
-                self.vy = 1.0; // Constant slow fall
-            },
-            ParticleType::Heart => {
-                self.vy = -1.0; // Float up
-                self.size = (get_time() * 5.0).sin() as f32 * 2.0 + 20.0; // Pulse
-            },
-            ParticleType::Shockwave => {
-                self.size += 50.0 * get_frame_time(); // Expand fast
-                self.life -= get_frame_time() * 2.0; // Die faster
-            }
-        }
+        let kind = self.kind;
+        kind.update_motion(self, dt);
         
-        self.rotation += self.angular_velocity * get_frame_time();
+        self.rotation += self.angular_velocity * dt;
         self.size *= 0.98; // Slow shrink
         self.life > 0.0
     }
@@ -160,29 +204,6 @@ impl Particle {
         let px = grid_x + self.x;
         let py = grid_y + self.y;
         
-        match self.kind {
-            ParticleType::Bubble => {
-                // Outline circle
-                draw_circle_lines(px, py, self.size, 1.0, col);
-                // Shine
-                draw_circle(px - self.size * 0.3, py - self.size * 0.3, self.size * 0.2, Color::new(1.0, 1.0, 1.0, alpha));
-            },
-            ParticleType::Heart => {
-                 draw_text("💖", px - self.size/2.0, py, self.size, WHITE);
-            },
-            ParticleType::Snowflake => {
-                 draw_text("❄", px - self.size/2.0, py, self.size, col);
-            },
-            ParticleType::Spark => {
-                draw_line(px, py, px - self.vx*0.2, py - self.vy*0.2, 2.0, col);
-            },
-            ParticleType::Shockwave => {
-                draw_circle_lines(px, py, self.size, 3.0 * alpha, col);
-            },
-            _ => {
-               // Explosion, Droplet, Goo, etc use circles
-               draw_circle(px, py, self.size, col);
-            }
-        }
+        self.kind.draw_style(self, px, py, col);
     }
 }

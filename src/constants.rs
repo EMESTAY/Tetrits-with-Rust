@@ -47,3 +47,18 @@ pub const COLOR_PLUS: Color = COLOR_PINK;
 
 pub const BLOCK_ROUNDING: f32 = 8.0; // Roundness of blocks
 pub const UI_ROUNDING: f32 = 15.0; // Roundness of UI panels
+
+// --- Drawing / Visuals ---
+pub const JELLY_PADDING: f32 = 1.0;
+pub const WOBBLE_SPEED: f64 = 3.0;
+
+// Anvil Styles
+pub const COLOR_ANVIL_BASE: Color = hex_color(0x33, 0x40, 0x4D); // Gunmetal
+pub const COLOR_ANVIL_HIGHLIGHT: Color = hex_color(0x99, 0xA6, 0xB3); // Brushed Steel
+pub const COLOR_ANVIL_SHADOW: Color = hex_color(0x1A, 0x1A, 0x26); // Deep Shadow
+
+// UI Layout
+pub const UI_BORDER_THICKNESS: f32 = 8.0;
+pub const UI_LEVEL_PANEL_HEIGHT: f32 = 100.0;
+pub const UI_SIDE_PANEL_WIDTH: f32 = 260.0;
+pub const UI_SPACING: f32 = 80.0;

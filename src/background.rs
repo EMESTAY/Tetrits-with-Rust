@@ -142,6 +142,7 @@ pub struct NatureBackground {
     pub trees: Vec<Tree>,
     pub sun_pos: Vec2,
     pub day_time: f64,
+    pub active_tomb: bool,
 }
 
 pub struct Cloud {
@@ -212,6 +213,7 @@ impl NatureBackground {
             trees,
             sun_pos: Vec2::new(100.0, 100.0),
             day_time: 0.0,
+            active_tomb: false,
         }
     }
 
@@ -328,9 +330,47 @@ impl NatureBackground {
 
         // Trees (Sorted by Y for depth?)
         // Simple manual ordering logic based on creation order in `new()` (Far to Near)
+        // Trees (Sorted by Y for depth?)
+        // Simple manual ordering logic based on creation order in `new()` (Far to Near)
         for t in &self.trees {
             t.draw(self.day_time as f32);
         }
+
+        // 6. Special Objects: Tomb of Life Insurance
+        if self.active_tomb {
+            // Draw somewhat prominently in foreground
+            self.draw_tomb(sw - 150.0, sh - 80.0, 1.0);
+        }
+    }
+
+    fn draw_tomb(&self, x: f32, y: f32, scale: f32) {
+        let w = 40.0 * scale;
+        let h = 60.0 * scale;
+        
+        let stone_col = Color::new(0.6, 0.6, 0.65, 1.0);
+        let dark_stone = Color::new(0.5, 0.5, 0.55, 1.0);
+        
+        // Base Mounded Dirt
+        draw_ellipse(x + w/2.0, y + h, w * 0.8, 10.0 * scale, 0.0, Color::new(0.35, 0.25, 0.15, 1.0));
+        
+        // Stone Body (Arched top)
+        // Rect bottom
+        draw_rectangle(x, y + h*0.3, w, h*0.7, stone_col);
+        // Circle top
+        draw_circle(x + w/2.0, y + h*0.3, w/2.0, stone_col);
+        
+        // Inner detail/Shadow
+        draw_circle(x + w/2.0, y + h*0.3, w/2.0 - 4.0, dark_stone);
+        draw_rectangle(x + 4.0, y + h*0.3, w - 8.0, h*0.7 - 4.0, dark_stone);
+        
+        // Cross / Text
+        let text_col = Color::new(0.3, 0.3, 0.35, 1.0); // Dark gray
+        // Vertical line
+        draw_rectangle(x + w/2.0 - 2.0, y + h*0.3, 4.0, 20.0, text_col);
+        // Horizontal line
+        draw_rectangle(x + w/2.0 - 8.0, y + h*0.3 + 6.0, 16.0, 4.0, text_col);
+        
+        // "R.I.P" (Too small for text? Maybe just lines)
     }
 
     fn draw_river(&self) {

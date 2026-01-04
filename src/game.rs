@@ -101,6 +101,15 @@ impl Game {
         game
     }
 
+    // --- Helper Methods for Bonuses ---
+    pub fn has_bonus(&self, kind: crate::bonuses::BonusType) -> bool {
+        self.active_bonuses.iter().any(|b| b.kind == kind)
+    }
+
+    pub fn bonus_count(&self, kind: crate::bonuses::BonusType) -> usize {
+        self.active_bonuses.iter().filter(|b| b.kind == kind).count()
+    }
+
     fn fill_bag(&mut self) {
         let mut types = vec![
             BiduleType::I,
@@ -231,11 +240,11 @@ impl Game {
                 } else {
                     speed = base_speed;
                     // CHILL Bonus
-                    if self.active_bonuses.iter().any(|b| b.kind == crate::bonuses::BonusType::Chill) {
+                    if self.has_bonus(crate::bonuses::BonusType::Chill) {
                         speed *= 1.5;
                     }
                     // TIME ANCHOR
-                    let anchors = self.active_bonuses.iter().filter(|b| b.kind == crate::bonuses::BonusType::TimeAnchor).count();
+                    let anchors = self.bonus_count(crate::bonuses::BonusType::TimeAnchor);
                     if anchors > 0 {
                         speed *= 1.0 + (0.1 * anchors as f64);
                     }
@@ -296,6 +305,7 @@ impl Game {
             b.timer > 0.0
         });
 
+        self.background.active_tomb = self.has_bonus(crate::bonuses::BonusType::LifeInsurance);
         self.background.update();
     }
 
@@ -513,160 +523,25 @@ impl Game {
 
         // --- SPECIAL PIECE MECHANICS (Jelly/Sand) ---
         if self.current_piece.kind == crate::bidule::BiduleType::Jelly {
-             // Sand Physics: Iterate newly placed blocks and let them fall if empty space below
-             // Because we just fixed them, we know their positions. 
-             // We need to iteratively check if any blocks can fall.
-             
-             let mut settling = true;
-             let mut iterations = 0;
-             while settling && iterations < 20 { // Limit iterations to prevent freezing
-                 settling = false;
-                 iterations += 1;
-                 
-                 // Scan from bottom up, left to right
-                 for y in (0..GRID_HEIGHT-1).rev() { // Start from second to last row
-                     for x in 0..GRID_WIDTH {
-                         if self.grid.cells[y][x].is_some() {
-                             // Check if this specific cell is "Jelly" (color Pink)? 
-                             // Pink #fb6f92 -> (0.984, 0.435, 0.572, 1.0)
-                             let cell = self.grid.cells[y][x].unwrap();
-                             let is_jelly = cell.color.r > 0.9 && cell.color.g > 0.4 && cell.color.g < 0.5 && cell.color.b > 0.5; // Robust range check for Pink
-                             
-                             if is_jelly {
-                                 // Check directly below
-                                 if self.grid.cells[y+1][x].is_none() {
-                                     // Fall!
-                                     self.grid.cells[y+1][x] = self.grid.cells[y][x];
-                                     self.grid.cells[y][x] = None;
-                                     settling = true;
-                                 } 
-                                 // Optional: Side sliding? "Liquid" usually spreads.
-                                 // Check down-left or down-right if below is blocked?
-                                 // Let's stick to simple vertical gravity for "Sand" first as "fits all crevasses" implies filling holes.
-                             }
-                         }
-                     }
-                 }
-             }
+             crate::special_bidule::resolve_jelly_physics(&mut self.grid);
         }
 
         // --- ONE-TIME BONUSES (Bomb / Laser) ---
-        let mut bonuses_to_remove = Vec::new();
-        for (i, bonus) in self.active_bonuses.iter().enumerate() {
-            match bonus.kind {
-                crate::bonuses::BonusType::Bomb => {
-                    // Explode 3x3 around each block of the locked piece
-                    // Or just around the center? Let's do around each block for massive destruction, or just one big boom?
-                    // Let's do: For each block in the piece, explode radius 1
-                    for p in self.current_piece.positions.iter() {
-                        let cx = self.current_piece.pos.x + p.x;
-                        let cy = self.current_piece.pos.y + p.y;
-                        for dy in -1..=1 {
-                            for dx in -1..=1 {
-                                let nx = cx + dx;
-                                let ny = cy + dy;
-                                if nx >= 0 && nx < GRID_WIDTH as i32 && ny >= 0 && ny < GRID_HEIGHT as i32 {
-                                    self.grid.cells[ny as usize][nx as usize] = None;
-                                    // Visual?
-                                    for _ in 0..5 {
-                                        self.particles.push(Particle::new(
-                                            (nx as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
-                                            (ny as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
-                                            RED, 
-                                            ParticleType::Explosion
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    self.screen_shake = 30.0;
-                    self.audio.play_tetris(); // Boom sound replacement?
-                    bonuses_to_remove.push(i);
-                }
-                crate::bonuses::BonusType::VerticalLaser => {
-                    // Clear columns occupied by the piece
-                    let mut cols = std::collections::HashSet::new();
-                    for p in self.current_piece.positions.iter() {
-                        cols.insert(self.current_piece.pos.x + p.x);
-                    }
-                    for c in cols {
-                         if c >= 0 && c < GRID_WIDTH as i32 {
-                            for y in 0..GRID_HEIGHT {
-                                self.grid.cells[y][c as usize] = None;
-                                // Sparks along the beam
-                                if fastrand::f32() < 0.3 {
-                                    self.particles.push(Particle::new(
-                                        (c as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
-                                        (y as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
-                                        YELLOW, 
-                                        ParticleType::Spark
-                                    ));
-                                }
-                            }
-                         }
-                    }
-                    self.screen_shake = 10.0;
-                    bonuses_to_remove.push(i);
-                }
-                crate::bonuses::BonusType::Drill => {
-                    // Same as laser basically in this implementation?
-                    // Or maybe it clears *below* the piece?
-                    // Let's implement Drill as clearing the columns BELOW the piece positions
-                    for p in self.current_piece.positions.iter() {
-                        let cx = self.current_piece.pos.x + p.x;
-                        let cy = self.current_piece.pos.y + p.y;
-                        if cx >= 0 && cx < GRID_WIDTH as i32 {
-                             for y in cy..GRID_HEIGHT as i32 {
-                                 if y >= 0 {
-                                     self.grid.cells[y as usize][cx as usize] = None;
-                                 }
-                             }
-                        }
-                    }
-                    bonuses_to_remove.push(i);
-                }
-                crate::bonuses::BonusType::VolatileGrid => {
-                     // 10% chance to explode 3x3
-                     if fastrand::f32() < 0.10 {
-                        // Explosion logic (copied from Bomb but maybe smaller?)
-                        // Reuse Bomb logic 3x3
-                        for p in self.current_piece.positions.iter() {
-                            let cx = self.current_piece.pos.x + p.x;
-                            let cy = self.current_piece.pos.y + p.y;
-                            for dy in -1..=1 {
-                                for dx in -1..=1 {
-                                    let nx = cx + dx;
-                                    let ny = cy + dy;
-                                    if nx >= 0 && nx < GRID_WIDTH as i32 && ny >= 0 && ny < GRID_HEIGHT as i32 {
-                                        self.grid.cells[ny as usize][nx as usize] = None;
-                                        // Explosion particles
-                                        for _ in 0..3 {
-                                           self.particles.push(Particle::new(
-                                                (nx as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
-                                                (ny as f32 * BLOCK_SIZE) + BLOCK_SIZE/2.0, 
-                                                ORANGE, 
-                                                ParticleType::Explosion
-                                            ));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        self.effects.push(ComicEffect::new("BOOM!".to_string(), 
-                            self.current_piece.pos.x as f32 * BLOCK_SIZE, 
-                            self.current_piece.pos.y as f32 * BLOCK_SIZE, RED));
-                        self.screen_shake = 20.0;
-                     }
-                }
-                _ => {}
-            }
-        }
-        // Remove used bonuses (reverse order to keep indices valid? No, active_bonuses logic needed)
-        // efficient removal:
-        for idx in bonuses_to_remove.iter().rev() {
-             self.active_bonuses.remove(*idx);
-        }
+        // --- ONE-TIME BONUSES (Bomb / Laser) ---
+        // --- SPECIAL MECHANICS (On Lock) ---
+        crate::special_bidule::resolve_special_mechanics_on_lock(
+            &mut self.grid,
+            &self.current_piece,
+            &mut self.particles,
+            &self.audio,
+            &mut self.screen_shake
+        );
+
+        // Remove expired bonuses (Time limit) - logic is in update, but here we might remove 1-time uses?
+        // Actually, with new system, Bomb/Laser/Drill/Anvil/Ghost are PIECES, simpler.
+        // Active Bonuses are only TimeAnchor, Chill, Pickaxe, LifeInsurance.
+        // Chill has timer. Others are infinite.
+        // So no need to remove "used" bonuses here because they are consumed as pieces.
 
         let cleared_rows = self.grid.clear_lines(); // Now returns Vec<usize>
         let cleared_count = cleared_rows.len() as i32;
@@ -792,7 +667,7 @@ impl Game {
 
         
         // Apply Golden Pickaxe (+20% per stack)
-        let pickaxes = self.active_bonuses.iter().filter(|b| b.kind == crate::bonuses::BonusType::GoldenPickaxe).count();
+        let pickaxes = self.bonus_count(crate::bonuses::BonusType::GoldenPickaxe);
         if pickaxes > 0 {
             let mult = 1.0 + 0.2 * pickaxes as f32;
             self.score = (self.score as f32 * mult) as i32;
@@ -831,7 +706,7 @@ impl Game {
             BonusType::LiquidFiller => 0.0, // Instant
 
             // Relics are Infinite
-            BonusType::TimeAnchor | BonusType::GoldenPickaxe | BonusType::VolatileGrid | BonusType::LifeInsurance => 999999.0,
+            BonusType::TimeAnchor | BonusType::GoldenPickaxe | BonusType::LifeInsurance => 999999.0,
             // Others are "One Time Use" on next lock
             _ => 9999.0, // Until used
         };
@@ -850,14 +725,42 @@ impl Game {
 
         // --- INSTANT EFFECT: BOMB BIDULE ---
         if bonus.kind == BonusType::Bomb {
-             // Force next piece to be BOMB
              let mut bomb = crate::bidule::Bidule::new(crate::bidule::BiduleType::Bomb);
-             bomb.pos.y = 2; // Spawn CLEARLY ON grid
+             bomb.pos.y = 2;
              self.next_pieces[0] = bomb;
-             
              self.audio.play_level_up();
              return;
         }
+
+        // --- INSTANT EFFECT: LASER BIDULE ---
+        if bonus.kind == BonusType::VerticalLaser {
+             let mut laser = crate::bidule::Bidule::new(crate::bidule::BiduleType::Laser);
+             laser.pos.y = 2;
+             self.next_pieces[0] = laser;
+             self.audio.play_level_up();
+             return;
+        }
+
+        // --- INSTANT EFFECT: DRILL BIDULE ---
+        if bonus.kind == BonusType::Drill {
+             let mut drill = crate::bidule::Bidule::new(crate::bidule::BiduleType::Drill);
+             drill.pos.y = 2;
+             self.next_pieces[0] = drill;
+             self.audio.play_level_up();
+             return;
+        }
+
+        // --- INSTANT EFFECT: ANVIL BIDULE ---
+        if bonus.kind == BonusType::Anvil {
+             let mut anvil = crate::bidule::Bidule::new(crate::bidule::BiduleType::Anvil);
+             anvil.pos.y = 2;
+             self.next_pieces[0] = anvil;
+             self.audio.play_level_up();
+             return;
+        }
+
+        // --- INSTANT EFFECT: GHOST BIDULE ---
+
 
 
         self.active_bonuses.push(ActiveBonus {
@@ -880,7 +783,7 @@ impl Game {
              let ptype = match bonus.kind {
                  BonusType::Chill => ParticleType::Snowflake,
                  BonusType::LifeInsurance => ParticleType::Heart,
-                 BonusType::Bomb | BonusType::VolatileGrid => ParticleType::Explosion,
+                 BonusType::Bomb => ParticleType::Explosion,
                  BonusType::VerticalLaser => ParticleType::Spark,
                  BonusType::LiquidFiller => ParticleType::GooChunk,
                  _ => ParticleType::Bubble,

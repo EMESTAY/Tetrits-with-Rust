@@ -32,6 +32,8 @@ impl Grid {
                 continue;
             }
             if self.cells[y as usize][x as usize].is_some() {
+                // Ghost pieces ignore block collisions (Telefrag logic)
+
                 return true;
             }
         }

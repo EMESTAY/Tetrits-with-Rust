@@ -26,6 +26,19 @@ cargo run
 - **C**: Hold Piece
 - **R**: Reset Game (on Game Over)
 
+## 🎨 Colors
+
+- **I**: Cyan (`#00E0FF`)
+- **O**: Golden Yellow (`#FFD400`)
+- **T**: Rich Purple (`#9D51F3`)
+- **S**: Lime Green (`#71F55F`)
+- **Z**: Coral Red (`#FF4E50`)
+- **J**: Strong Blue (`#2E86AB`)
+- **L**: Bright Orange (`#FF9F1C`)
+- **Plus (+)**: Hot Pink (`#FF69B4`)
+- **Jelly (Special)**: Pink (`#FB6F92`)
+- **Bomb (Special)**: Lava Orange (`#F35B04`)
+
 ## 🎁 Bonuses
 
 Unlock bonuses by clearing lines and leveling up!
@@ -45,7 +58,6 @@ Unlock bonuses by clearing lines and leveling up!
 
 ### Legendary
 
-- ☢️ **VOLATILE GRID**: Cleared lines have a 10% chance to EXPLODE.
 - 💖 **LIFE INSURANCE**: Prevents Game Over once. Consumable.
 
 ## 👨‍💻 Developer Mode
@@ -83,6 +95,19 @@ cargo run
 - **C** : Garder la pièce
 - **R** : Recommencer la partie (Écran Game Over)
 
+## 🎨 Couleurs
+
+- **I** : Cyan (`#00E0FF`)
+- **O** : Jaune Doré (`#FFD400`)
+- **T** : Violet Riche (`#9D51F3`)
+- **S** : Vert Citron (`#71F55F`)
+- **Z** : Rouge Corail (`#FF4E50`)
+- **J** : Bleu Fort (`#2E86AB`)
+- **L** : Orange Vif (`#FF9F1C`)
+- **Plus (+)** : Rose Vif (`#FF69B4`)
+- **Gelée (Spécial)** : Rose (`#FB6F92`)
+- **Bombe (Spécial)** : Orange Lave (`#F35B04`)
+
 ## 🎁 Bonus
 
 Débloquez des bonus en effaçant des lignes et en montant de niveau !
@@ -102,7 +127,6 @@ Débloquez des bonus en effaçant des lignes et en montant de niveau !
 
 ### Légendaires
 
-- ☢️ **GRID VOLATILE** : Les lignes effacées ont 10% de chance d'EXPLOSER.
 - 💖 **ASSURANCE VIE** : Empêche le Game Over une fois. Consommable.
 
 ## 👨‍💻 Mode Développeur
